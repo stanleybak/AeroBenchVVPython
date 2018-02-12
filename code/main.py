@@ -5,7 +5,6 @@ Python version of GCAS maneuver benchmark
 
 from math import pi
 from numpy import deg2rad # pylint: disable=E0611
-import numpy as np
 
 from getDefaultSettings import getDefaultSettings
 from RunF16Sim import RunF16Sim
@@ -42,20 +41,12 @@ def main():
     orient = 4 # Orientation for trim
     analysisOn = True
     printOn = True
-    animOn = True # save an animation video? (slow)
+    animFilename = None # save an animation video? Try a filename ending in .gif or .mp4 (slow)
 
     # Select Desired F-16 Plant
     f16_plant = 'morelli' # or 'stevens'
-    output, passFail = RunF16Sim(initialState, tMax, orient, f16_plant, \
-        flightLimits, ctrlLimits, autopilot, analysisOn, printOn, animOn)
-
-    # Save results
-    # Save output to workspace
-    #save('SimResults.mat','output','passFail');
-
-    # Generate Renderings using a modified version of flypath3d
-    #MakePicture;
-    #MakeAnimation;
+    RunF16Sim(initialState, tMax, orient, f16_plant, \
+        flightLimits, ctrlLimits, autopilot, analysisOn, printOn, animFilename)
 
 if __name__ == '__main__':
     main()

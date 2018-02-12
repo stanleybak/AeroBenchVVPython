@@ -91,9 +91,6 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
     ax.set_ylim([min(pos_ys), max(pos_xs)])
     ax.set_zlim([min(pos_zs), max(pos_zs)])
 
-    minpos = min(min(pos_xs), min(pos_ys))
-    maxpos = max(max(pos_xs), max(pos_ys))
-
     ax.set_xlabel('X [ft]')
     ax.set_ylabel('Y [ft]')
     ax.set_zlabel('Altitude [ft] ')
@@ -199,28 +196,33 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
 
         return None
 
-    anim_obj = animation.FuncAnimation(fig, anim_func, frames, interval=20, \
+    anim_obj = animation.FuncAnimation(fig, anim_func, frames, interval=30, \
         blit=False, repeat=True)
 
     if filename is not None:
-        fps = 50
-        codec = 'libx264'
 
-        print "Saving {} at {:.2f} fps using ffmpeg with codec '{}'.".format(
-            filename, fps, codec)
-
-        # if this fails do: 'sudo apt-get install ffmpeg'
-        try:
-            extra_args = []
-
-            if codec is not None:
-                extra_args += ['-vcodec', str(codec)]
-
-            anim_obj.save(filename, fps=fps, extra_args=extra_args)
+        if filename.endswith('.gif'):
+            print "\nSaving animation to '{}' using 'imagemagick'...".format(filename)
+            anim_obj.save(filename, dpi=80, writer='imagemagick')
             print "Finished saving to {} in {:.1f} sec".format(filename, time.time() - start)
-        except AttributeError:
-            traceback.print_exc()
+        else:
+            fps = 50
+            codec = 'libx264'
 
-            print "\nSaving video file failed! Is ffmpeg installed? Can you run 'ffmpeg' in the terminal?"
+            print "\nSaving '{}' at {:.2f} fps using ffmpeg with codec '{}'.".format(
+                filename, fps, codec)
+
+            # if this fails do: 'sudo apt-get install ffmpeg'
+            try:
+                extra_args = []
+
+                if codec is not None:
+                    extra_args += ['-vcodec', str(codec)]
+
+                anim_obj.save(filename, fps=fps, extra_args=extra_args)
+                print "Finished saving to {} in {:.1f} sec".format(filename, time.time() - start)
+            except AttributeError:
+                traceback.print_exc()
+                print "\nSaving video file failed! Is ffmpeg installed? Can you run 'ffmpeg' in the terminal?"
     else:
         plt.show()

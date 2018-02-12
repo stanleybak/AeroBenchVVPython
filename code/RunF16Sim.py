@@ -3,7 +3,6 @@ Stanley Bak
 RunF16Sim python version
 '''
 
-import math
 import time
 
 import numpy as np
@@ -14,9 +13,10 @@ from util import printmat
 from trimmerFun import trimmerFun
 from autopilot import GcasAutopilot
 from controlledF16 import controlledF16
-from plot3d_anim import import plot3d_anim
+from plot3d_anim import plot3d_anim
 
-def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, autopilot, analysisOn, printOn, animOn):
+def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, autopilot, analysisOn, printOn, \
+             animFilename):
     'Simulates and analyzes autonomous F-16 maneuvers'
 
     assert not (flightLimits.vMin < 300 or flightLimits.vMax > 900), \
@@ -104,7 +104,6 @@ def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, au
     der_func = lambda t, y: controlledF16(t, y, xequil, uequil, K_lqr, F16Model, ctrlLimits, autopilot)[0]
 
     #max_step = None #0.01
-    cur_time = 0.0
     times = [0]
     states = [x0]
     modes = []
@@ -156,10 +155,6 @@ def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, au
     assert rk45.status == 'finished', "rk.status was {}".format(rk45.status)
     print "Simulation Time: {:.4}s".format(time.time() - start)
 
-    if animOn:
-        skip = 2 # 2 will plot every other frame, 10 for every 10th frame, ect.
-        plot3d_anim(times, states, modes, ps_list, Nz_list, skip, filename='plot.mp4')
-
-    exit(1)
-
-
+    if animFilename is not None:
+        skip = 10 # 2 will plot every other frame, 10 for every 10th frame, ect.
+        plot3d_anim(times, states, modes, ps_list, Nz_list, skip, filename=animFilename)
