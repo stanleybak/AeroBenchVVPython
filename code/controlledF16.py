@@ -64,7 +64,7 @@ def controlledF16(t, x_f16, xequil, uequil, K_lqr, F16_model, ctrlLimits, autopi
     #   Note: Control vector (u) for subF16 is in units of degrees
     assert F16_model == 'stevens' or F16_model == 'morelli', 'Unknown F16_model: {}'.format(F16_model)
 
-    xd_model, Nz, Ny, _, _ = subf16_model(x_f16[0:13], u_deg, F16_model == 'stevens')
+    xd_model, Nz, Ny, _, _ = subf16_model(x_f16[0:13], u_deg, F16_model)
 
     xd = np.zeros((16,))
     xd[:len(xd_model)] = xd_model

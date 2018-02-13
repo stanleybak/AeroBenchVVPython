@@ -11,7 +11,7 @@ from tgear import tgear
 from conf16 import conf16
 from subf16_model import subf16_model
 
-def clf16(s, x, u, const):
+def clf16(s, x, u, const, model='stevens', adjust_cy=True):
     '''
     objective function of the optimization to find the trim conditions
 
@@ -42,7 +42,7 @@ def clf16(s, x, u, const):
     [x, u] = conf16(x, u, const)
 
     # we just want the derivative
-    subf16 = lambda x, u: subf16_model(x, u, True)[0]
+    subf16 = lambda x, u: subf16_model(x, u, model, adjust_cy)[0]
 
     xd = subf16(x, u)
 

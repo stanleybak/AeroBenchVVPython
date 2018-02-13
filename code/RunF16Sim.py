@@ -86,10 +86,14 @@ def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, au
     autopilot = GcasAutopilot(xequil, uequil, flightLimits, ctrlLimits)
 
     # Hard coded LQR gain matrix
-    K_lqr = np.array( \
-        [[-156.88020, -31.03700, -38.72980, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 38.02750, -5.65500, -14.08800, -34.06420, -9.95410], \
-        [0, 0, 0, 17.56400, 1.58390, -41.43510, 6.29550, -53.86020]], dtype=float)
+    K_lqr = np.zeros((3, 8))
+
+    # Longitudinal Gains
+    K_lqr[:1, :3] = np.array([-156.88020, -31.03700, -38.72980], dtype=float)
+
+    # Lateral Gains
+    K_lqr[1:, 3:] = np.array([[38.02750, -5.65500, -14.08800, -34.06420, -9.95410], \
+                              [17.56400, 1.58390, -41.43510, 6.29550, -53.86020]], dtype=float)
 
     if printOn:
         printmat(K_lqr, 'Decoupled LQR Controller Gains', 'elevator aileron rudder', \

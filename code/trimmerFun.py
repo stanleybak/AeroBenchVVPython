@@ -20,18 +20,15 @@ from scipy.optimize import minimize
 from clf16 import clf16
 from adc import adc
 
-def trimmerFun(Xguess, Uguess, orient, inputs, printOn):
+def trimmerFun(Xguess, Uguess, orient, inputs, printOn, model='stevens', adjust_cy=True):
     'calculate equilibrium state'
 
     assert isinstance(Xguess, np.ndarray)
     assert isinstance(Uguess, np.ndarray)
     assert isinstance(inputs, np.ndarray)
 
-    x = np.zeros((13,))
-    u = np.zeros((4,))
-
-    #x = Xguess.copy()
-    #u = Uguess.copy()
+    x = Xguess.copy()
+    u = Uguess.copy()
 
     if printOn:
         print '------------------------------------------------------------'
@@ -90,7 +87,7 @@ def trimmerFun(Xguess, Uguess, orient, inputs, printOn):
         maxiter = 1000
         minimize_tol = 1e-9
 
-        res = minimize(clf16, s, args=(x, u, const), method='Nelder-Mead', tol=minimize_tol, \
+        res = minimize(clf16, s, args=(x, u, const, model, adjust_cy), method='Nelder-Mead', tol=minimize_tol, \
                        options={'maxiter': maxiter})
 
         cost = res.fun

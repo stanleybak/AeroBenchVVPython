@@ -44,12 +44,13 @@ from dampp import dampp
 
 from Morellif16 import Morellif16
 
-def subf16_model(x, u, use_stevens):
+def subf16_model(x, u, model, adjust_cy=True):
     '''output aircraft state vector derivative for a given input
 
     if use_stevens is False, will use Morelli model (polynomials) for part of the computation
     '''
 
+    assert model == 'stevens' or model == 'morelli'
     assert len(x) == 13
     assert len(u) == 4
 
@@ -99,7 +100,7 @@ def subf16_model(x, u, use_stevens):
     dail = ail/20
     drdr = rdr/30
 
-    if use_stevens:
+    if model == 'stevens':
         # stevens & lewis (look up table version)
         cxt = cx(alpha, el)
         cyt = cy(beta, ail, rdr)
@@ -109,7 +110,7 @@ def subf16_model(x, u, use_stevens):
         cmt = cm(alpha, el)
         cnt = cn(alpha, beta) + dnda(alpha, beta) * dail + dndr(alpha, beta) * drdr
     else:
-        # morelli model
+        # morelli model (polynomial version)
         cxt, cyt, czt, clt, cmt, cnt = Morellif16(alpha*pi/180, beta*pi/180, el*pi/180, ail*pi/180, rdr*pi/180, \
                                                   p, q, r, cbar, b, vt, xcg, xcgr)
 
@@ -177,7 +178,8 @@ def subf16_model(x, u, use_stevens):
 
     ####################################
     ###### peter additionls below ######
-    ay = ay+xa*xd[8]           # moves side accel in front of c.g.
+    if adjust_cy:
+        ay = ay+xa*xd[8]           # moves side accel in front of c.g.
 
     # For extraction of Nz
     Nz = (-az / g) - 1 # zeroed at 1 g, positive g = pulling up
