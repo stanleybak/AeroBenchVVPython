@@ -1,16 +1,177 @@
 '''
-Compute the Longitudinal Gains using an linearized model and LQR control design
+Compute the Longitudinal and Lateral Gains using an linearized model and LQR control design
 
-Note: to run this you need to have python-control installed
+Note: to run this you need to have python-control and python-slycot to be installed
 '''
 
 import numpy as np
 
 from control import lqr # requires python-control be installed
 
-from util import printmat
+from util import printmat, Freezable
 from trimmerFun import trimmerFun
 from jacobFun import jacobFun
+
+# states
+X_VT = 0        # air speed, VT    (ft/sec)
+X_ALPHA = 1     # angle of attack, alpha  (rad)
+X_BETA = 2      # angle of sideslip, beta (rad)
+X_PHI = 3       # roll angle, phi  (rad)
+X_THETA = 4     # pitch angle, theta  (rad)
+X_PSI = 5       # yaw angle, psi  (rad)
+X_P = 6         # roll rate, P  (rad/sec)
+X_Q = 7         # pitch rate, Q  (rad/sec)
+X_R = 8         # yaw rate, R  (rad/sec)
+X_PN = 9        # northward horizontal displacement, pn  (feet)
+X_PE = 10       # eastward horizontal displacement, pe  (feet)
+X_ALTITUDE = 11 # altitude, h  (feet)
+X_POW = 12      # engine thrust dynamics lag state, pow
+NUM_X = 13
+
+# inputs
+U_THROTTLE = 0  # throttle command  0.0 < u(1) < 1.0
+U_ELEVATOR = 1  # elevator command in degrees
+U_AILERON = 2   # aileron command in degrees
+U_RUDDER = 3    # rudder command in degrees
+NUM_U = 4
+
+# outputs
+Y_AZ = 0        # normal accel
+Y_Q = 1         # pitch rate, Q  (rad/sec)
+Y_ALPHA = 2     # angle of attack, alpha  (rad)
+Y_THETA = 3     # pitch angle, theta  (rad)
+Y_VT = 4        # air speed, VT    (ft/sec)
+Y_AY = 5        # side accel
+Y_P = 6         # roll rate, P  (rad/sec)
+Y_R = 7         # yaw rate, R  (rad/sec)
+Y_BETA = 8      # angle of sideslip, beta (rad)
+Y_PHI = 9       # roll angle, phi  (rad)
+NUM_Y = 10
+
+# Orientation for Linearization
+ORIENT_WINGS_LEVEL_ZERO_GAMMA = 1 # gamma is the path angle, the angle between the ground and the aircraft
+ORIENT_WINGS_LEVEL_NONZERO_GAMMA = 2
+ORIENT_CONSTANT_ALTITUDE_TURN = 3
+ORIENT_STEADY_PULL_UP = 4
+
+def subindex_mat(mat, rows, cols):
+    'helper function: create a submatrix from a list of rows and columns'
+
+    rv = []
+
+    for row in rows:
+        vals = []
+
+        for col in cols:
+            vals.append(mat[row, col])
+
+        rv.append(vals)
+
+    return np.array(rv, dtype=float)
+
+class DesignData(Freezable):
+    'data structure for control gain optimization'
+
+    def __init__(self, printOn, label, trim_alt, trim_Vt, trim_phi, trim_theta, model):
+        self.label = label
+        self.printOn = printOn
+
+        self.xguess = np.zeros((NUM_X,))
+        self.xguess[X_ALTITUDE] = trim_alt
+        self.xguess[X_VT] = trim_Vt
+        self.xguess[X_PHI] = trim_phi
+        self.xguess[X_THETA] = trim_theta
+
+        self.uguess = np.zeros((NUM_U,))
+        self.uguess[U_THROTTLE] = 0.2
+
+        self.model = model
+
+        # set these ones after creation of the object
+        self.state_indices = None
+        self.input_indices = None
+        self.output_indices = None
+        self.q_list = None
+        self.r_list = None
+
+        self.freeze_attrs()
+
+    def compute_trim_states(self, orient):
+        'compute the trim states, xequil and uequil'
+
+        # inputs: [Vt, h, gamm, psidot, thetadot]
+        inputs = np.zeros((5,))
+
+        inputs[0] = self.xguess[X_VT]
+        inputs[1] = self.xguess[X_ALTITUDE]
+        #np.array([self.xguess[0], self.xguess[11], 0, 0, 0], dtype=float)
+
+        if self.printOn:
+            printmat(inputs, 'Operator Inputs', [], 'Vt h gamma psidot thetadot')
+
+            print 'Trim Orientation Selected:   ',
+            if orient == 1:
+                print 'Wings Level (gamma = 0)'
+            elif orient == 2:
+                print 'Wings Level (gamma <> 0)'
+            elif orient == 3:
+                print 'Constant Altitude Turn'
+            elif orient == 4:
+                print 'Steady Pull Up'
+            else:
+                assert False, 'Invalid Orientation (orient) for trimmerFun'
+
+            printmat(self.xguess, 'State Guess', [], 'Vt alpha beta phi theta psi p q r pn pe alt pow')
+            printmat(self.uguess, 'Control Guess', [], 'throttle elevator aileron rudder')
+
+        xequil, uequil = trimmerFun(self.xguess, self.uguess, orient, inputs, self.printOn, \
+                                    self.model, adjust_cy=False)
+
+        if self.printOn:
+            print '------------------------------------------------------------'
+            print 'Equilibrium / Trim Conditions'
+            printmat(xequil, 'State Equilibrium', [], 'Vt alpha beta phi theta psi p q r pn pe alt pow')
+            printmat(uequil, 'Control Equilibrium', [], 'throttle elevator aileron rudder')
+
+        return xequil, uequil
+
+    def compute_gain_matrix(self, xequil, uequil):
+        'compute the control gain K matrix'
+
+        A, B, C, D = jacobFun(xequil, uequil, self.printOn, self.model, adjust_cy=False)
+
+        si = self.state_indices
+        ii = self.input_indices
+        oi = self.output_indices
+
+        A_con = subindex_mat(A, si, si)
+        B_con = subindex_mat(B, si, ii)
+
+        C_con = subindex_mat(C, oi, si)
+        D_con = subindex_mat(D, oi, ii)
+
+        Atilde = np.zeros((len(si) + len(oi), len(si) + len(oi))) # stack A and C
+        Atilde[:len(si), :len(si)] = A_con
+        Atilde[len(si):, :len(si)] = C_con
+
+        Btilde = np.zeros((len(si) + len(oi), len(ii))) # stack B and D
+        Btilde[:len(si), :len(ii)] = B_con
+        Btilde[len(si):, :len(ii)] = D_con
+
+        # Atilde = np.zeros((len(si) + len(oi), len(si) + len(oi))) # stack A and C
+        # Atilde[:2, :2] = A_long
+        # Atilde[2, :2] = C_long[2, :]
+        #
+        # Btilde = np.zeros((3, 1)) # stack B and D
+        # Btilde[:2, :1] = B_long
+        # Btilde[2, 0] = D_long[2, :]
+
+        q = np.diag(self.q_list)
+        r = np.diag(self.r_list)
+
+        K_mat, _, _ = lqr(Atilde, Btilde, q, r) # requires python-slycot and python-control be installed
+
+        return K_mat
 
 def main(printOn=True):
     'runs control design and outputs gain matrix and trim point to stdout'
@@ -19,86 +180,20 @@ def main(printOn=True):
         print 'Longitudinal F - 16 Controller for Nz tracking'
         print 'MANUAL INPUTS:'
 
-    # SET THESE VALUES MANUALLY
+    # Trim point - manually set
+    # Note: If a gain - scheduled controller is desired, the above values would
+    # be varied for each desired trim point.
     altg = 1000 # Altitude guess (ft msl)
     Vtg = 502 # Velocity guess (ft / sec)
     phig = 0 # Roll angle from horizontal guess (deg)
     thetag = 0 # Pitch angle guess (deg)
-    # Note: If a gain - scheduled controller is desired, the above values would
-    # be varied for each desired trim point.
-
     model = 'stevens'
-    xguess = np.array([Vtg, 0, 0, phig, thetag, 0, 0, 0, 0, 0, 0, altg, 0], dtype=float)
 
-    # u = [throttle elevator aileron rudder]
-    uguess = np.array([.2, 0, 0, 0], dtype=float)
+    long_data = DesignData(printOn, 'longitudinal', altg, Vtg, phig, thetag, model)
 
-    # Orientation for Linearization
-    # 1:    Wings Level (gamma = 0)
-    # 2:    Wings Level (gamma <> 0)
-    # 3:    Constant Altitude Turn
-    # 4:    Steady Pull Up
-    orient = 4
-    inputs = np.array([xguess[0], xguess[11], 0, 0, 0], dtype=float)
-
-    if printOn:
-        printmat(inputs, 'Operator Inputs', [], 'Vt h gamma psidot thetadot')
-
-        print 'Trim Orientation Selected:   ',
-        if orient == 1:
-            print 'Wings Level (gamma = 0)'
-        elif orient == 2:
-            print 'Wings Level (gamma <> 0)'
-        elif orient == 3:
-            print 'Constant Altitude Turn'
-        elif orient == 4:
-            print 'Steady Pull Up'
-        else:
-            assert False, 'Invalid Orientation (orient) for trimmerFun'
-
-        printmat(xguess, 'State Guess', [], 'Vt alpha beta phi theta psi p q r pn pe alt pow')
-        printmat(uguess, 'Control Guess', [], 'throttle elevator aileron rudder')
-
-    xequil, uequil = trimmerFun(xguess, uguess, orient, inputs, printOn, model, adjust_cy=False)
-
-    if printOn:
-        print '------------------------------------------------------------'
-        print 'Equilibrium / Trim Conditions'
-        printmat(xequil, 'State Equilibrium', [], 'Vt alpha beta phi theta psi p q r pn pe alt pow')
-        printmat(uequil, 'Control Equilibrium', [], 'throttle elevator aileron rudder')
-
-    # Get Linearized Model
-    A, B, C, D = jacobFun(xequil, uequil, printOn, model='stevens', adjust_cy=False)
-
-    ## Decouple Linearized F-16 Model: Isolate Longitudinal States & Actuators
-    def subindex_mat(mat, rows, cols):
-        'helper function: create a submatrix from a list of rows and columns'
-
-        rv = []
-
-        for row in rows:
-            vals = []
-
-            for col in cols:
-                vals.append(mat[row, col])
-
-            rv.append(vals)
-
-        return np.array(rv, dtype=float)
-
-    A_long = subindex_mat(A, [1, 7], [1, 7])    # States:   alpha, q
-    B_long = subindex_mat(B, [1, 7], [1])       # Inputs:   elevator
-
-    C_long = subindex_mat(C, [2, 1, 0], [1, 7]) # States:   alpha, q
-    D_long = subindex_mat(D, [2, 1, 0], [1])    # Inputs:   elevator
-
-    Atilde = np.zeros((3, 3))
-    Atilde[:2, :2] = A_long
-    Atilde[2, :2] = C_long[2, :]
-
-    Btilde = np.zeros((3, 1))
-    Btilde[:2, :1] = B_long
-    Btilde[2, 0] = D_long[2, :]
+    long_data.state_indices = [X_ALPHA, X_Q]
+    long_data.input_indices = [U_ELEVATOR]
+    long_data.output_indices = [Y_AZ]
 
     ## Select State & Control Weights & Penalties
     # Set LQR weights
@@ -109,14 +204,16 @@ def main(printOn=True):
     q_alpha = 1000
     q_q = 0
     q_Nz = 1500
+    long_data.q_list = [q_alpha, q_q, q_Nz]
 
     # R: Penalty on Control Effort
     r_elevator = 1
+    long_data.r_list = [r_elevator]
 
-    ## Calculate Longitudinal Short Period LQR Gains
-    d = np.diag([q_alpha, q_q, q_Nz])
+    orient = ORIENT_STEADY_PULL_UP
 
-    K_long, _, _ = lqr(Atilde, Btilde, d, r_elevator) # requires python-slycot and python-control be installed
+    xequil, uequil = long_data.compute_trim_states(orient)
+    K_long = long_data.compute_gain_matrix(xequil, uequil)
 
     if printOn:
         printmat(K_long, 'LQR Gains', 'elevator', 'alpha q int_e_Nz')
