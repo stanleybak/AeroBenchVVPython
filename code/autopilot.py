@@ -23,6 +23,7 @@ class Autopilot(Freezable):
         self.uequil = uequil
         self.flightLimits = flightLimits
         self.ctrlLimits = ctrlLimits
+        self.state = '<Unknown State>' # this should be overwritten by subclasses
 
         self.freeze_attrs()
 
@@ -69,10 +70,9 @@ class GcasAutopilot(Autopilot):
     STATE_DONE = 'Finished'
 
     def __init__(self, xequil, uequil, flightLimits, ctrlLimits):
+        Autopilot.__init__(self, xequil, uequil, flightLimits, ctrlLimits)
 
         self.state = GcasAutopilot.STATE_START
-
-        Autopilot.__init__(self, xequil, uequil, flightLimits, ctrlLimits)
 
     @abc.abstractmethod
     def advance_discrete_state(self, t, x_f16):

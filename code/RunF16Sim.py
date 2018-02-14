@@ -15,7 +15,7 @@ from autopilot import GcasAutopilot
 from controlledF16 import controlledF16
 from plot3d_anim import plot3d_anim
 
-def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, autopilot, analysisOn, printOn, \
+def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, autopilot, pass_fail, printOn, \
              animFilename):
     'Simulates and analyzes autonomous F-16 maneuvers'
 
@@ -124,8 +124,9 @@ def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, au
     updated = autopilot.advance_discrete_state(rk45.t, rk45.y)
     modes.append(autopilot.state)
 
-    _, _, Nz, ps, _ = controlledF16(times[-1], states[-1], xequil, uequil, K_lqr, F16Model, \
+    xd, u, Nz, ps, Ny_r = controlledF16(times[-1], states[-1], xequil, uequil, K_lqr, F16Model, \
                                     ctrlLimits, autopilot)
+    pass_fail.advance(rk45.t, rk45.y, autopilot.state, xd, u, Nz, ps, Ny_r)
     Nz_list.append(Nz)
     ps_list.append(ps)
 
@@ -147,18 +148,19 @@ def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, au
                 modes.append(autopilot.state)
 
                 # re-run dynamics function at current state to get non-state variables
-                _, _, Nz, ps, _ = controlledF16(times[-1], states[-1], xequil, uequil, K_lqr, F16Model, \
+                xd, u, Nz, ps, Ny_r = controlledF16(times[-1], states[-1], xequil, uequil, K_lqr, F16Model, \
                                                 ctrlLimits, autopilot)
+                pass_fail.advance(rk45.t, rk45.y, autopilot.state, xd, u, Nz, ps, Ny_r)
                 Nz_list.append(Nz)
                 ps_list.append(ps)
 
                 if updated:
                     rk45 = RK45(der_func, times[-1], states[-1], tMax)
+                    break
 
     # make sure the solver didn't fail
     assert rk45.status == 'finished', "rk.status was {}".format(rk45.status)
     print "Simulation Time: {:.4}s".format(time.time() - start)
 
     if animFilename is not None:
-        skip = 10 # 2 will plot every other frame, 10 for every 10th frame, ect.
-        plot3d_anim(times, states, modes, ps_list, Nz_list, skip, filename=animFilename)
+        plot3d_anim(times, states, modes, ps_list, Nz_list, filename=animFilename)

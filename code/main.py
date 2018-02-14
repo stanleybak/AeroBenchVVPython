@@ -8,6 +8,7 @@ from numpy import deg2rad # pylint: disable=E0611
 
 from getDefaultSettings import getDefaultSettings
 from RunF16Sim import RunF16Sim
+from PassFailAutomaton import GcasPassFailAutomaton
 
 def main():
     'main function'
@@ -33,20 +34,23 @@ def main():
     autopilot = None
     #autopilot = GcasAutopilot()
 
+    pass_fail = GcasPassFailAutomaton()
+
     ctrlLimits.ThrottleMax = 0.7 # Limit to Mil power (no afterburner)
 
     # Build Initial Condition Vectors
     # state = [VT, alpha, beta, phi, theta, psi, P, Q, R, pn, pe, h, pow]
     initialState = [Vtg, alphag, betag, phig, thetag, psig, 0, 0, 0, 0, 0, altg, powg]
     orient = 4 # Orientation for trim
-    analysisOn = True
     printOn = True
-    animFilename = None # save an animation video? Try a filename ending in .gif or .mp4 (slow)
+    
+    # save an animation video? Try a filename ending in .gif or .mp4 (slow). Using '' will plot to the screen.
+    animFilename = ''
 
     # Select Desired F-16 Plant
     f16_plant = 'morelli' # or 'stevens'
     RunF16Sim(initialState, tMax, orient, f16_plant, \
-        flightLimits, ctrlLimits, autopilot, analysisOn, printOn, animFilename)
+        flightLimits, ctrlLimits, autopilot, pass_fail, printOn, animFilename)
 
 if __name__ == '__main__':
     main()

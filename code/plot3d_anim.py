@@ -6,6 +6,7 @@ Python code for F-16 animation video output
 import math
 import time
 import numpy as np
+from numpy import rad2deg
 
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Line3D, Poly3DCollection
@@ -55,13 +56,23 @@ def rotate3d(pts, theta, psi, phi):
     return rv
 
 def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
-    '''make a 3d plot of the GCAS maneuver
-
-    if full_plot = true will plot all the surface of the plane (pretty but slow)
+    '''
+    make a 3d plot of the GCAS maneuver
     '''
 
+    full_plot = True
+
+    if filename == '': # plot to the screen
+        filename = None
+        skip = 20
+        full_plot = False
+    elif filename.endswith('.gif'):
+        skip = 5
+    else:
+        skip = 1 # plot every frame
+
     assert len(times) == len(states)
-    full_plot = filename is not None
+
     start = time.time()
 
     times = times[0::skip]
@@ -133,14 +144,14 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
         alt_text.set_text('h = {:.2f} ft'.format(alt))
         v_text.set_text('V = {:.2f} ft/sec'.format(speed))
 
-        alpha_text.set_text('$\\alpha$ = {:.2f} deg'.format(np.rad2deg(alpha)))
-        beta_text.set_text('$\\beta$ = {:.2f} deg'.format(np.rad2deg(beta)))
+        alpha_text.set_text('$\\alpha$ = {:.2f} deg'.format(rad2deg(alpha)))
+        beta_text.set_text('$\\beta$ = {:.2f} deg'.format(rad2deg(beta)))
 
         nz_text.set_text('$N_z$ = {:.2f} g'.format(Nz_list[frame]))
-        ps_text.set_text('$p_s$ = {:.2f} deg/sec'.format(np.rad2deg(ps_list[frame])))
+        ps_text.set_text('$p_s$ = {:.2f} deg/sec'.format(rad2deg(ps_list[frame])))
 
         ang_text.set_text('[$\\phi$, $\\theta$, $\\psi$] = [{:.2f}, {:.2f}, {:.2f}] deg'.format(\
-            np.rad2deg(phi), np.rad2deg(theta), np.rad2deg(psi)))
+            rad2deg(phi), rad2deg(theta), rad2deg(psi)))
 
         # do trail
         trail_len = 200 / skip
