@@ -11,9 +11,14 @@ more information: https://github.com/pheidlauf/AeroBenchVV
 The following libraries are required:
 
 `python-numpy` - for matrix operations
+
 `python-scipy` - for simulation / numerical integration (RK45) and trim condition optimization 
+
 `matplotlib` - for animation / plotting (requires ffmpeg for mp4 output or imagemagick for gif)
+
 `python-control` - for control design (not simulation)
+
+`python-slycot` - for control design (not simulation)
 
 ### Release Documentation
 Distribution A: Approved for Public Release (88ABW-2017-6379)
