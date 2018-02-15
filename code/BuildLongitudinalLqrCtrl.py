@@ -72,8 +72,7 @@ def subindex_mat(mat, rows, cols):
 class DesignData(Freezable):
     'data structure for control gain optimization'
 
-    def __init__(self, printOn, label, trim_alt, trim_Vt, trim_phi, trim_theta, model):
-        self.label = label
+    def __init__(self, printOn, trim_alt, trim_Vt, trim_phi, trim_theta, model):
         self.printOn = printOn
 
         self.xguess = np.zeros((NUM_X,))
@@ -88,9 +87,6 @@ class DesignData(Freezable):
         self.model = model
 
         # set these ones after creation of the object
-        self.state_indices = None
-        self.input_indices = None
-        self.output_indices = None
         self.q_list = None
         self.r_list = None
 
@@ -135,36 +131,12 @@ class DesignData(Freezable):
 
         return xequil, uequil
 
-    def compute_gain_matrix(self, xequil, uequil):
+    def compute_gain_matrix(self, xequil, uequil, build_a_b_tilde_func):
         'compute the control gain K matrix'
 
         A, B, C, D = jacobFun(xequil, uequil, self.printOn, self.model, adjust_cy=False)
 
-        si = self.state_indices
-        ii = self.input_indices
-        oi = self.output_indices
-
-        A_con = subindex_mat(A, si, si)
-        B_con = subindex_mat(B, si, ii)
-
-        C_con = subindex_mat(C, oi, si)
-        D_con = subindex_mat(D, oi, ii)
-
-        Atilde = np.zeros((len(si) + len(oi), len(si) + len(oi))) # stack A and C
-        Atilde[:len(si), :len(si)] = A_con
-        Atilde[len(si):, :len(si)] = C_con
-
-        Btilde = np.zeros((len(si) + len(oi), len(ii))) # stack B and D
-        Btilde[:len(si), :len(ii)] = B_con
-        Btilde[len(si):, :len(ii)] = D_con
-
-        # Atilde = np.zeros((len(si) + len(oi), len(si) + len(oi))) # stack A and C
-        # Atilde[:2, :2] = A_long
-        # Atilde[2, :2] = C_long[2, :]
-        #
-        # Btilde = np.zeros((3, 1)) # stack B and D
-        # Btilde[:2, :1] = B_long
-        # Btilde[2, 0] = D_long[2, :]
+        Atilde, Btilde = build_a_b_tilde_func(A, B, C, D, xequil)
 
         q = np.diag(self.q_list)
         r = np.diag(self.r_list)
@@ -173,8 +145,69 @@ class DesignData(Freezable):
 
         return K_mat
 
-def main(printOn=True):
+def build_a_b_tilde_longitudinal(A, B, C, D, _):
+    'build the A and B tilde matrices for optimization'
+
+    si = [X_ALPHA, X_Q] # state indices
+    ii = [U_ELEVATOR] # input indices
+    oi = [Y_AZ] # output indices
+
+    A_con = subindex_mat(A, si, si)
+    B_con = subindex_mat(B, si, ii)
+
+    C_con = subindex_mat(C, oi, si)
+    D_con = subindex_mat(D, oi, ii)
+
+    # stack A and C in a square matrix
+    size = A_con.shape[0] + C_con.shape[0]
+    Atilde = np.zeros((size, size))
+    Atilde[:A_con.shape[0], :A_con.shape[1]] = A_con
+    Atilde[A_con.shape[0]:, :C_con.shape[1]] = C_con
+
+    # stack B and D
+    Btilde = np.array([row for row in B_con] + [row for row in D_con], dtype=float)
+
+    return Atilde, Btilde
+
+def build_a_b_tilde_lateral(A, B, C, D, xequil):
+    'build the A and B tilde matrices for optimization'
+
+    si = [X_BETA, X_P, X_R] # state indices
+    ii = [U_AILERON, U_RUDDER] # input indices
+    # the two outputs are:
+    # ps - stability roll rate, nonlinear formula is ps = p*cos(alpha) + r*sin(alpha), small angle is [p + r*alpha]
+    # Ny+r - coupling of term between yaw rate and side accel that pilots don't like which we command to zero
+
+    # Outputs:  beta, p, r, ps, Ny+r
+
+    A_con = subindex_mat(A, si, si)
+
+    B_con = subindex_mat(B, si, ii)
+
+    C_top = subindex_mat(C, [Y_P], si) + subindex_mat(C, [Y_R], si) * xequil[X_ALPHA] # ps ~= p + r*alpha
+    C_bottom = subindex_mat(C, [Y_AY], si) + subindex_mat(C, [Y_R], si) # Ny + r
+    C_con = np.array([row for row in C_top] + [row for row in C_bottom], dtype=float) # stack C_top and C_bottom
+
+    D_top = subindex_mat(D, [Y_P], ii) + subindex_mat(D, [Y_R], ii) * xequil[X_ALPHA] # ps ~= p + r*alpha
+
+    D_bottom = subindex_mat(D, [Y_AY], ii) + subindex_mat(D, [Y_R], ii) # Ny + r
+    D_con = np.array([row for row in D_top] + [row for row in D_bottom], dtype=float) # stack D_top and D_bottom
+
+    # stack A and C in a square matrix
+    size = A_con.shape[0] + C_con.shape[0]
+    Atilde = np.zeros((size, size))
+    Atilde[:A_con.shape[0], :A_con.shape[1]] = A_con
+    Atilde[A_con.shape[0]:, :C_con.shape[1]] = C_con
+
+    # stack B and D
+    Btilde = np.array([row for row in B_con] + [row for row in D_con], dtype=float)
+
+    return Atilde, Btilde
+
+def main():
     'runs control design and outputs gain matrix and trim point to stdout'
+
+    printOn = False # print the outputs?
 
     if printOn:
         print 'Longitudinal F - 16 Controller for Nz tracking'
@@ -189,43 +222,57 @@ def main(printOn=True):
     thetag = 0 # Pitch angle guess (deg)
     model = 'stevens'
 
-    long_data = DesignData(printOn, 'longitudinal', altg, Vtg, phig, thetag, model)
-
-    long_data.state_indices = [X_ALPHA, X_Q]
-    long_data.input_indices = [U_ELEVATOR]
-    long_data.output_indices = [Y_AZ]
-
-    ## Select State & Control Weights & Penalties
-    # Set LQR weights
-    # Q: Penalty on State Error
-    # These were chosen to try to achieve a natural frequency of 3 rad/sec
-    # and a damping ratio (zeta) of 0.707
-    # see the matlab code for more analysis of the resultant controller
+    # Q: Penalty on State Error in LQR controller
+    # These were chosen to try to achieve a natural frequency of 3 rad/sec and a damping ratio (zeta) of 0.707
+    # see the matlab code for more analysis of the resultant controllers
     q_alpha = 1000
     q_q = 0
     q_Nz = 1500
-    long_data.q_list = [q_alpha, q_q, q_Nz]
+    long_q_list = [q_alpha, q_q, q_Nz]
 
-    # R: Penalty on Control Effort
+    q_beta = 0
+    q_p = 0
+    q_r = 0
+    q_ps_i = 1200
+    q_Ny_r_i = 3000
+    lat_q_list = [q_beta, q_p, q_r, q_ps_i, q_Ny_r_i]
+
+    q_lists = [long_q_list, lat_q_list]
+
+    # R: Penalty on Control Effort in LRQ controller
     r_elevator = 1
-    long_data.r_list = [r_elevator]
+    long_r_list = [r_elevator]
 
-    orient = ORIENT_STEADY_PULL_UP
+    r_aileron = 1
+    r_rudder = 1
+    lat_r_list = [r_aileron, r_rudder]
 
-    xequil, uequil = long_data.compute_trim_states(orient)
-    K_long = long_data.compute_gain_matrix(xequil, uequil)
+    r_lists = [long_r_list, lat_r_list]
 
-    if printOn:
-        printmat(K_long, 'LQR Gains', 'elevator', 'alpha q int_e_Nz')
+    orients = [ORIENT_STEADY_PULL_UP, ORIENT_WINGS_LEVEL_NONZERO_GAMMA]
+
+    build_tilde_funcs = [build_a_b_tilde_longitudinal, build_a_b_tilde_lateral]
+
+    labels = ['Longitudinal', 'Lateral']
+    suffix = ['long', 'lat']
+
+    for i in xrange(len(labels)):
+        dd = DesignData(printOn, altg, Vtg, phig, thetag, model)
+
+        dd.q_list = q_lists[i]
+        dd.r_list = r_lists[i]
+
+        xequil, uequil = dd.compute_trim_states(orients[i])
+        K_mat = dd.compute_gain_matrix(xequil, uequil, build_tilde_funcs[i])
+
+        print "{} Equilibrium Points:".format(labels[i])
+        print "xequil_{} = np.array({}, dtype=float).transpose()".format(suffix[i], [x for x in xequil])
+        print "uequil_{} = np.array({}, dtype=float).transpose()".format(suffix[i], [u for u in uequil])
         print ""
 
-    print "Longitudinal Equilibrium Points:"
-    print "xequil_long = np.array({}, dtype=float).transpose()".format([x for x in xequil])
-    print "uequil_long = np.array({}, dtype=float).transpose()".format([u for u in uequil])
-
-    print ""
-    print "Longitudinal Gain Matrix:"
-    print "K_lqr_long = np.array([{}, {}, {}], dtype=float)".format(K_long[0, 0], K_long[0, 1], K_long[0, 2])
+        print "{} Gain Matrix:".format(labels[i])
+        print "K_lqr_{} = np.array({}, dtype=float)".format(suffix[i], [[n for n in row] for row in K_mat])
+        print ""
 
 if __name__ == '__main__':
     main()

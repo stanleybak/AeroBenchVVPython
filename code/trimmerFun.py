@@ -71,43 +71,32 @@ def trimmerFun(Xguess, Uguess, orient, inputs, printOn, model='stevens', adjust_
         s[1] = u[1]
         s[2] = x[1]
 
-    counter = 0
-    max_iter = 100
-
+    maxiter = 1000
     tol = 1e-7
-    cost = tol + 1 # make sure you enter the loop
+    minimize_tol = 1e-9
 
-    while cost > tol:
-        counter = counter + 1
-        assert counter < max_iter, "trimmerFun did not converge after {} iterations".format(max_iter)
+    res = minimize(clf16, s, args=(x, u, const, model, adjust_cy), method='Nelder-Mead', tol=minimize_tol, \
+                   options={'maxiter': maxiter})
 
-        # https://docs.scipy.org/doc/scipy/reference/optimize.html#global-optimization
-        #[s,options,x,u,fcost,lcost] = fminsa('clf16',s,options,[],x,u,const)
+    cost = res.fun
 
-        maxiter = 1000
-        minimize_tol = 1e-9
+    if printOn:
+        print 'Throttle (percent):            {}'.format(u[0])
+        print 'Elevator (deg):                {}'.format(u[1])
+        print 'Ailerons (deg):                {}'.format(u[2])
+        print 'Rudder (deg):                  {}'.format(u[3])
+        print 'Angle of Attack (deg):         {}'.format(rtod*x[1])
+        print 'Sideslip Angle (deg):          {}'.format(rtod*x[2])
+        print 'Pitch Angle (deg):             {}'.format(rtod*x[4])
+        print 'Bank Angle (deg):              {}'.format(rtod*x[3])
 
-        res = minimize(clf16, s, args=(x, u, const, model, adjust_cy), method='Nelder-Mead', tol=minimize_tol, \
-                       options={'maxiter': maxiter})
+        amach, qbar = adc(x[0], x[11])
+        print 'Dynamic Pressure (psf):        {}'.format(qbar)
+        print 'Mach Number:                   {}'.format(amach)
 
-        cost = res.fun
+        print ''
+        print 'Cost Function:           {}'.format(cost)
 
-        if printOn:
-            print ''
-            print 'Throttle (percent):            {}'.format(u[0])
-            print 'Elevator (deg):                {}'.format(u[1])
-            print 'Ailerons (deg):                {}'.format(u[2])
-            print 'Rudder (deg):                  {}'.format(u[3])
-            print 'Angle of Attack (deg):         {}'.format(rtod*x[1])
-            print 'Sideslip Angle (deg):          {}'.format(rtod*x[2])
-            print 'Pitch Angle (deg):             {}'.format(rtod*x[4])
-            print 'Bank Angle (deg):              {}'.format(rtod*x[3])
-
-            amach, qbar = adc(x[0], x[11])
-            print 'Dynamic Pressure (psf):        {}'.format(qbar)
-            print 'Mach Number:                   {}'.format(amach)
-
-            print ''
-            print 'Cost Function:           {}'.format(cost)
+    assert cost < tol, "trimmerFun did not converge"
 
     return x, u

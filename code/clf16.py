@@ -19,7 +19,7 @@ def clf16(s, x, u, const, model='stevens', adjust_cy=True):
     returns the cost
     '''
 
-    radgam, singam, rr, pr, tr, phi, cphi, sphi, thetadot, coord, stab, orient = const
+    _, singam, _, _, tr, _, _, _, thetadot, _, _, orient = const
     gamm = asin(singam)
 
     if len(s) == 3:

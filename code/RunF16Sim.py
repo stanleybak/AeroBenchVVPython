@@ -150,7 +150,7 @@ def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, au
                 # re-run dynamics function at current state to get non-state variables
                 xd, u, Nz, ps, Ny_r = controlledF16(times[-1], states[-1], xequil, uequil, K_lqr, F16Model, \
                                                 ctrlLimits, autopilot)
-                pass_fail.advance(rk45.t, rk45.y, autopilot.state, xd, u, Nz, ps, Ny_r)
+                pass_fail.advance(times[-1], states[-1], autopilot.state, xd, u, Nz, ps, Ny_r)
                 Nz_list.append(Nz)
                 ps_list.append(ps)
 
@@ -164,3 +164,5 @@ def RunF16Sim(initialState, tMax, orient, F16Model, flightLimits, ctrlLimits, au
 
     if animFilename is not None:
         plot3d_anim(times, states, modes, ps_list, Nz_list, filename=animFilename)
+
+    return pass_fail.result()
