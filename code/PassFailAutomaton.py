@@ -17,7 +17,7 @@ class FlightLimits(Freezable):
 
     def __init__(self):
         self.altitudeMin = 0 # ft AGL
-        self.altitudeMax = 10000 #ft AGL
+        self.altitudeMax = 20000 #ft AGL
         self.NzMax = 9 # G's
         self.NzMin = -2 #G's
         self.psMaxAccelDeg = 500 # deg/s/s
@@ -29,13 +29,28 @@ class FlightLimits(Freezable):
         self.alphaMaxDeg = 45 # deg
         self.betaMaxDeg = 30 # deg
 
+        self.check()
+
         self.freeze_attrs()
+
+    def check(self):
+        'check that flight limits are within model bounds'
+
+        flightLimits = self
+
+        assert not (flightLimits.vMin < 300 or flightLimits.vMax > 900), \
+        'flightLimits: Airspeed limits outside model limits (300 to 900)'
+
+        assert not (flightLimits.alphaMinDeg < -10 or flightLimits.alphaMaxDeg > 45), \
+            'flightLimits: Alpha limits outside model limits (-10 to 45)'
+
+        assert not (abs(flightLimits.betaMaxDeg) > 30), 'flightLimits: Beta limit outside model limits (30 deg)'
 
 class PassFailAutomaton(Freezable):
     '''The parent class for a pass fail automaton... checks each state against the flight envelope limits'''
 
-    def __init__(self, printOn):
-        self.printOn = printOn
+    def __init__(self):
+        self.break_on_error = True
 
         self.freeze_attrs()
 
@@ -65,14 +80,14 @@ class FlightLimitsPFA(PassFailAutomaton):
     ALTITUDE_LIMIT = 5
     NUM = 6
 
-    def __init__(self, printOn, flightLimits):
+    def __init__(self, flightLimits):
         self.flightLimits = flightLimits
         self.passed = True
 
         self.last_ps = None
         self.last_time = None
 
-        PassFailAutomaton.__init__(self, printOn)
+        PassFailAutomaton.__init__(self)
 
     def check(self, label, time, value, minVal, maxVal):
         'check if a value was out of bounds'
@@ -81,14 +96,8 @@ class FlightLimitsPFA(PassFailAutomaton):
 
         if value < minVal:
             self.passed = False
-
-            if self.printOn:
-                print "Min {} limit exceeded ({} < {}) at time {:.3f}".format(label, value, minVal, time)
         elif value > maxVal:
             self.passed = False
-
-            if self.printOn:
-                print "Max {} limit exceeded ({} > {}) at time {:.3f}".format(label, value, maxVal, time)
 
     @abc.abstractmethod
     def advance(self, t, x_f16, autopilot_state, xd, u, Nz, ps, Ny_r):

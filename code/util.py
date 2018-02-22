@@ -3,7 +3,6 @@ Python utilities for F-16 GCAS
 '''
 
 from math import floor, ceil
-
 import numpy as np
 
 class Freezable(object):
@@ -108,3 +107,4 @@ def sign(ele):
         rv = 1
 
     return rv
+

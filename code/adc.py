@@ -16,10 +16,10 @@ def adc(vt, alt):
     ro = 2.377e-3
     tfac = 1 - .703e-5 * alt
 
-    if alt >= 35000:
+    if alt >= 35000: # in stratosphere
         t = 390
     else:
-        t = 519 * tfac
+        t = 519 * tfac # 3 rankine per atmosphere (3 rankine per 1000 ft)
 
     # rho = freestream mass density
     rho = ro * tfac**4.14

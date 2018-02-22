@@ -3,63 +3,59 @@ Stanley Bak
 Python version of GCAS maneuver benchmark
 '''
 
-import time
-
 from math import pi
-from numpy import deg2rad # pylint: disable=E0611
+from numpy import deg2rad
 
 from RunF16Sim import RunF16Sim
 from PassFailAutomaton import FlightLimitsPFA, FlightLimits
 from CtrlLimits import CtrlLimits
+from LowLevelController import LowLevelController
+from Autopilot import GcasAutopilot
+
+from plot3d_anim import plot3d_anim
 
 def main():
     'main function'
 
-    printOn = False # print to console
+    flightLimits = FlightLimits()
+    ctrlLimits = CtrlLimits()
+    llc = LowLevelController(ctrlLimits)
+    autopilot = GcasAutopilot(llc.xequil, llc.uequil, flightLimits, ctrlLimits)
+    pass_fail = FlightLimitsPFA(flightLimits)
+    pass_fail.break_on_error = False
 
-    # Initial Conditions
+    ### Initial Conditions ###
     powg = 9 # Power
 
     # Default alpha & beta
     alphag = deg2rad(2.1215) # Trim Angle of Attack (rad)
     betag = 0                   # Side slip angle (rad)
 
-    # Initial Attitude (for simpleGCAS)
-    altg = 3500
-    Vtg = 540                        # Pass at Vtg = 540;    Fail at Vtg = 550;
+    # Initial Attitude
+    altg = 3600
+    Vtg = 540                   # Pass at Vtg = 540;    Fail at Vtg = 550;
     phig = (pi/2)*0.5           # Roll angle from wings level (rad)
     thetag = (-pi/2)*0.8        # Pitch angle from nose level (rad)
     psig = -pi/4                # Yaw angle from North (rad)
-    tMax = 15
-
-    flightLimits = FlightLimits()
-    ctrlLimits = CtrlLimits()
-
-    print "main.py: Can't initialize autopilot here because no trim conditions (yet)"
-    autopilot = None
-    #autopilot = GcasAutopilot()
-
-    pass_fail = FlightLimitsPFA(printOn, flightLimits)
-
-    ctrlLimits.ThrottleMax = 0.7 # Limit to Mil power (no afterburner)
 
     # Build Initial Condition Vectors
     # state = [VT, alpha, beta, phi, theta, psi, P, Q, R, pn, pe, h, pow]
     initialState = [Vtg, alphag, betag, phig, thetag, psig, 0, 0, 0, 0, 0, altg, powg]
-    orient = 4 # Orientation for trim
 
     # save an animation video? Try a filename ending in .gif or .mp4 (slow). Using '' will plot to the screen.
-    animFilename = None
+    animFilename = ''
 
     # Select Desired F-16 Plant
-    f16_plant = 'morelli' # or 'stevens'
+    f16_plant = 'morelli' # 'stevens' or 'morelli'
 
-    start = time.time()
-    passed = RunF16Sim(initialState, tMax, orient, f16_plant, \
-        flightLimits, ctrlLimits, autopilot, pass_fail, printOn, animFilename)
+    tMax = 15 # simulation time
 
-    print "Runtime: {:.2f}s".format(time.time() - start)
-    print "Simulation Passed: {}".format(passed)
+    passed, times, states, modes, ps_list, Nz_list = RunF16Sim(initialState, tMax, f16_plant, autopilot, llc, pass_fail)
+
+    print "Simulation Conditions Passed: {}".format(passed)
+
+    if animFilename is not None:
+        plot3d_anim(times, states, modes, ps_list, Nz_list, filename=animFilename)
 
 if __name__ == '__main__':
     main()

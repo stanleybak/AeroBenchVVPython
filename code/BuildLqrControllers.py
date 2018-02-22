@@ -121,7 +121,7 @@ class DesignData(Freezable):
             printmat(self.uguess, 'Control Guess', [], 'throttle elevator aileron rudder')
 
         xequil, uequil = trimmerFun(self.xguess, self.uguess, orient, inputs, self.printOn, \
-                                    self.model, adjust_cy=False)
+                                    self.model, adjust_cy=True)
 
         if self.printOn:
             print '------------------------------------------------------------'
@@ -134,7 +134,7 @@ class DesignData(Freezable):
     def compute_gain_matrix(self, xequil, uequil, build_a_b_tilde_func):
         'compute the control gain K matrix'
 
-        A, B, C, D = jacobFun(xequil, uequil, self.printOn, self.model, adjust_cy=False)
+        A, B, C, D = jacobFun(xequil, uequil, self.printOn, self.model, adjust_cy=True)
 
         Atilde, Btilde = build_a_b_tilde_func(A, B, C, D, xequil)
 
@@ -249,7 +249,7 @@ def main():
 
     r_lists = [long_r_list, lat_r_list]
 
-    orients = [ORIENT_STEADY_PULL_UP, ORIENT_WINGS_LEVEL_NONZERO_GAMMA]
+    orients = [ORIENT_WINGS_LEVEL_NONZERO_GAMMA, ORIENT_WINGS_LEVEL_NONZERO_GAMMA]
 
     build_tilde_funcs = [build_a_b_tilde_longitudinal, build_a_b_tilde_lateral]
 

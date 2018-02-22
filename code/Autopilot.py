@@ -61,6 +61,17 @@ class Autopilot(Freezable):
 
         return u_ref
 
+    def get_num_integrators(self):
+        'get the number of integrators in the autopilot'
+
+        return 0
+
+    def get_integrator_derivatives(self, t, x_f16, u_ref, x_ctrl, Nz, Ny):
+        'get the derivatives of the integrators in the autopilot'
+
+        return []
+
+
 class GcasAutopilot(Autopilot):
     '''The ground-collision avoidance system autopilot logic'''
 
