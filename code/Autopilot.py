@@ -190,3 +190,66 @@ class GcasAutopilot(Autopilot):
         throttle = -K_vt * (x_f16[0] - self.xequil[0])
 
         return Nz, ps, Ny_r, throttle
+
+class FixedSpeedAutopilot(Autopilot):
+    '''Simple Autopilot that gives a fixed speed command using proportional control'''
+
+    def __init__(self, setpoint, p_gain, xequil, uequil, flightLimits, ctrlLimits):
+        self.setpoint = setpoint
+        self.p_gain = p_gain
+
+        Autopilot.__init__(self, xequil, uequil, flightLimits, ctrlLimits)
+
+    @abc.abstractmethod
+    def advance_discrete_state(self, t, x_f16):
+        '''advance the discrete state based on the current aircraft state'''
+
+        return False
+
+    @abc.abstractmethod
+    def get_u_ref(self, t, x_f16):
+        '''for the current discrete state, get the reference inputs signals'''
+
+        x_dif = self.setpoint - x_f16[0]
+
+        return 0, 0, 0, self.p_gain * x_dif
+
+class FixedAltitudeAutopilot(Autopilot):
+    '''Simple Autopilot that gives a fixed speed command using proportional control'''
+
+    def __init__(self, setpoint, xequil, uequil, flightLimits, ctrlLimits):
+        self.setpoint = setpoint
+
+        Autopilot.__init__(self, xequil, uequil, flightLimits, ctrlLimits)
+
+    @abc.abstractmethod
+    def advance_discrete_state(self, t, x_f16):
+        '''advance the discrete state based on the current aircraft state'''
+
+        return False
+
+    @abc.abstractmethod
+    def get_u_ref(self, t, x_f16):
+        '''for the current discrete state, get the reference inputs signals'''
+
+        airspeed = x_f16[0]   # Vt            (ft/sec)
+        alpha = x_f16[1]      # AoA           (rad)
+        theta = x_f16[4]      # Pitch angle   (rad)
+        gamma = theta - alpha # Path angle    (rad)
+        h = x_f16[11]         # Altitude      (feet)
+
+        # Proportional Control
+        k_alt = 0.025
+        h_error = self.setpoint - h
+        Nz = k_alt * h_error # Allows stacking of cmds
+
+        # (Psuedo) Derivative control using path angle
+        k_gamma = 25
+        Nz = Nz - k_gamma*gamma
+
+        # try to maintain a fixed airspeed near trim point
+        K_vt = 0.25
+        airspeed_setpoint = 540
+        throttle = -K_vt * (airspeed - self.xequil[0])
+
+        return Nz, 0, 0, throttle

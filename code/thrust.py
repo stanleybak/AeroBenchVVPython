@@ -11,9 +11,6 @@ from util import fix
 def thrust(power, alt, rmach):
     'thrust lookup-table version'
 
-    # adding a check for neg velocity
-    assert rmach >= 0, 'negative velocity not modeled'
-
     a = np.array([[1060, 670, 880, 1140, 1500, 1860], \
         [635, 425, 690, 1010, 1330, 1700], \
         [60, 25, 345, 755, 1130, 1525], \
@@ -51,6 +48,8 @@ def thrust(power, alt, rmach):
 
     if m >= 5:
         m = 4
+    elif m <= 0:
+        m = 0
 
     dm = rm - m
     cdh = 1 - dh

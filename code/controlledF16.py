@@ -28,6 +28,7 @@ def controlledF16(t, x_f16, F16_model, autopilot, llc):
     x_ctrl, u_deg = llc.get_u_deg(u_ref, x_f16)
 
     #   Note: Control vector (u) for subF16 is in units of degrees
+
     xd_model, Nz, Ny, _, _ = subf16_model(x_f16[0:13], u_deg, F16_model)
 
     # Nonlinear (Actual): ps = p * cos(alpha) + r * sin(alpha)
@@ -44,13 +45,14 @@ def controlledF16(t, x_f16, F16_model, autopilot, llc):
     end = start + llc.get_num_integrators()
     xd[start:end] = llc.get_integrator_derivatives(t, x_f16, u_ref, x_ctrl, Nz, Ny)
 
+
     # integrators from autopilot
     start = end
     end = start + autopilot.get_num_integrators()
     xd[start:end] = autopilot.get_integrator_derivatives(t, x_f16, u_ref, x_ctrl, Nz, Ny)
 
     # Add tracked error states to xd for integration
-    xd[13:16] = [Nz - u_ref[0], ps - u_ref[1], Ny_r - u_ref[2]]
+    #xd[13:16] = [Nz - u_ref[0], ps - u_ref[1], Ny_r - u_ref[2]]
 
     # Convert all degree values to radians for output
     u_rad = np.zeros((7,)) # throt, ele, ail, rud, Nz_ref, ps_ref, Ny_r_ref

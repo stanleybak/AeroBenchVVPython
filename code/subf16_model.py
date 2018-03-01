@@ -4,24 +4,24 @@ Python F-16 subf16
 outputs aircraft state vector deriative
 '''
 
-#         x(1) = air speed, VT    (ft/sec)
-#         x(2) = angle of attack, alpha  (rad)
-#         x(3) = angle of sideslip, beta (rad)
-#         x(4) = roll angle, phi  (rad)
-#         x(5) = pitch angle, theta  (rad)
-#         x(6) = yaw angle, psi  (rad)
-#         x(7) = roll rate, P  (rad/sec)
-#         x(8) = pitch rate, Q  (rad/sec)
-#         x(9) = yaw rate, R  (rad/sec)
-#         x(10) = northward horizontal displacement, pn  (feet)
-#         x(11) = eastward horizontal displacement, pe  (feet)
-#         x(12) = altitude, h  (feet)
-#         x(13) = engine thrust dynamics lag state, pow
+#         x[0] = air speed, VT    (ft/sec)
+#         x[1] = angle of attack, alpha  (rad)
+#         x[2] = angle of sideslip, beta (rad)
+#         x[3] = roll angle, phi  (rad)
+#         x[4] = pitch angle, theta  (rad)
+#         x[5] = yaw angle, psi  (rad)
+#         x[6] = roll rate, P  (rad/sec)
+#         x[7] = pitch rate, Q  (rad/sec)
+#         x[8] = yaw rate, R  (rad/sec)
+#         x[9] = northward horizontal displacement, pn  (feet)
+#         x[10] = eastward horizontal displacement, pe  (feet)
+#         x[11] = altitude, h  (feet)
+#         x[12] = engine thrust dynamics lag state, pow
 #
-#         u(1) = throttle command  0.0 < u(1) < 1.0
-#         u(2) = elevator command in degrees
-#         u(3) = aileron command in degrees
-#         u(4) = rudder command in degrees
+#         u[0] = throttle command  0.0 < u(1) < 1.0
+#         u[1] = elevator command in degrees
+#         u[2] = aileron command in degrees
+#         u[3] = rudder command in degrees
 #
 
 from math import sin, cos, pi
@@ -123,7 +123,7 @@ def subf16_model(x, u, model, adjust_cy=True):
     b2v = b * tvt
     cq = cbar * q * tvt
 
-    # get ready for state equtions
+    # get ready for state equations
     d = dampp(alpha)
     cxt = cxt + cq * d[0]
     cyt = cyt + b2v * (d[1] * r + d[2] * p)
@@ -166,6 +166,7 @@ def subf16_model(x, u, model, adjust_cy=True):
 
     # moments
     xd[6] = (c2 * p + c1 * r + c4 * he) * q + qsb * (c3 * clt + c4 * cnt)
+
     xd[7] = (c5 * p-c7 * he) * r + c6 * (r * r-p * p) + qs * cbar * c7 * cmt
     xd[8] = (c8 * p-c2 * r + c9 * he) * q + qsb * (c4 * clt + c9 * cnt)
 

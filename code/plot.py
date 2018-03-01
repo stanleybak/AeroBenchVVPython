@@ -126,7 +126,6 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
     def anim_func(frame):
         'updates for the animation frame'
 
-        print "Frame: {} / {}".format(frame, frames)
         speed = states[frame][0]
         alpha = states[frame][1]
         beta = states[frame][2]
@@ -235,5 +234,55 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
             except AttributeError:
                 traceback.print_exc()
                 print "\nSaving video file failed! Is ffmpeg installed? Can you run 'ffmpeg' in the terminal?"
+    else:
+        plt.show()
+
+def plot2d(filename, times, plot_data_list):
+    '''plot state variables in 2d
+
+    plot data list of is a list of (values_list, var_data),
+    where values_list is an 2-d array, the first is time step, the second is a state vector
+    and each var_data is a list of tuples: (state_index, label)
+    '''
+
+    num_plots = sum([len(var_data) for _, var_data in plot_data_list])
+
+    fig = plt.figure(figsize=(7, 5))
+
+    for plot_index in xrange(num_plots):
+        ax = fig.add_subplot(num_plots, 1, plot_index + 1)
+        ax.tick_params(axis='both', which='major', labelsize=16)
+
+        sum_plots = 0
+        states = None
+        state_var_data = None
+
+        for values_list, var_data in plot_data_list:
+            if plot_index < sum_plots + len(var_data):
+                states = values_list
+                state_var_data = var_data
+                break
+
+            sum_plots += len(var_data)
+
+        state_index, label = state_var_data[plot_index - sum_plots]
+
+        if state_index == 0 and isinstance(states[0], float): # state is just a single number
+            ys = states
+        else:
+            ys = [state[state_index] for state in states]
+
+        ax.plot(times, ys, '-')
+
+        ax.set_ylabel(label, fontsize=16)
+
+        # last one gets an x axis label
+        if plot_index == num_plots - 1:
+            ax.set_xlabel('Time', fontsize=16)
+
+    plt.tight_layout()
+
+    if filename is not None:
+        plt.savefig(filename, bbox_inches='tight')
     else:
         plt.show()

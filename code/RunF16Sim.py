@@ -6,10 +6,9 @@ RunF16Sim python version
 import numpy as np
 
 from scipy.integrate import RK45
-
 from controlledF16 import controlledF16
 
-def RunF16Sim(initialState, tMax, F16Model, ap, llc, pass_fail, sim_step=0.01):
+def RunF16Sim(initialState, tMax, der_func, F16Model, ap, llc, pass_fail, sim_step=0.01):
     'Simulates and analyzes autonomous F-16 maneuvers'
 
     # append integral error states to state vector
@@ -18,15 +17,14 @@ def RunF16Sim(initialState, tMax, F16Model, ap, llc, pass_fail, sim_step=0.01):
     x0[:initialState.shape[0]] = initialState
 
     # run the numerical simulation
-    der_func = lambda t, y: controlledF16(t, y, F16Model, ap, llc)[0]
-
     times = [0]
     states = [x0]
     modes = [ap.state]
 
-    _, _, Nz, ps, _ = controlledF16(times[-1], states[-1], F16Model, ap, llc)
+    _, u, Nz, ps, _ = controlledF16(times[-1], states[-1], F16Model, ap, llc)
     Nz_list = [Nz]
     ps_list = [ps]
+    u_list = [u]
 
     rk45 = RK45(der_func, times[-1], states[-1], tMax)
 
@@ -41,7 +39,7 @@ def RunF16Sim(initialState, tMax, F16Model, ap, llc, pass_fail, sim_step=0.01):
                 times.append(t)
                 states.append(dense_output(t))
 
-                updated = ap.advance_discrete_state(rk45.t, rk45.y)
+                updated = ap.advance_discrete_state(times[-1], states[-1])
                 modes.append(ap.state)
 
                 # re-run dynamics function at current state to get non-state variables
@@ -49,8 +47,10 @@ def RunF16Sim(initialState, tMax, F16Model, ap, llc, pass_fail, sim_step=0.01):
                 pass_fail.advance(times[-1], states[-1], ap.state, xd, u, Nz, ps, Ny_r)
                 Nz_list.append(Nz)
                 ps_list.append(ps)
+                u_list.append(u)
 
                 if updated:
+                    print "updated discrete state at time {}".format(times[-1])
                     rk45 = RK45(der_func, times[-1], states[-1], tMax)
                     break
 
@@ -66,4 +66,4 @@ def RunF16Sim(initialState, tMax, F16Model, ap, llc, pass_fail, sim_step=0.01):
     if rk45.status != 'finished':
         result = False # fail
 
-    return result, times, states, modes, ps_list, Nz_list
+    return result, times, states, modes, ps_list, Nz_list, u_list
