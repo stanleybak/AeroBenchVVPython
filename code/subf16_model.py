@@ -44,21 +44,36 @@ from dampp import dampp
 
 from Morellif16 import Morellif16
 
-def subf16_model(x, u, model, adjust_cy=True):
+def subf16_model(x, u, model, adjust_cy=True, multipliers=None):
     '''output aircraft state vector derivative for a given input
 
-    if use_stevens is False, will use Morelli model (polynomials) for part of the computation
+    The reference for the model is Appendix A of Stevens & Lewis
+
+    if multipliers is not None, it should be a 7-tuple:
+    xcg_mult, cxt_mult, cyt_mult, czt_mult, clt_mult, cmt_mult, cnt_mult
+
+    xcg is x component of center of gravity (between 0.0 and 1.0, default 0.35)
+
+    cxt is the x-axis aerodynamic force coefficient
+    cyt is the sideforce coefficient
+    czt is the z-axis force coefficient
+
+    clt is a sum of the rolling moment coefficients
+    cmt is the pitching moment coefficient
+    cnt is a sum of the yawing moment coefficients
     '''
 
     assert model == 'stevens' or model == 'morelli'
     assert len(x) == 13
     assert len(u) == 4
+    assert multipliers is None or len(multipliers) == 7
+
+    xcg = 0.35
+
+    if multipliers is not None:
+        xcg *= multipliers[0]
 
     thtlc, el, ail, rdr = u
-
-    # The following is the c.g. location which can be modified (nominal is xcg=.35)
-
-    xcg = .35 # x coordinate of the reference center of gravity position
 
     s = 300
     b = 30
@@ -116,6 +131,16 @@ def subf16_model(x, u, model, adjust_cy=True):
         # morelli model (polynomial version)
         cxt, cyt, czt, clt, cmt, cnt = Morellif16(alpha*pi/180, beta*pi/180, el*pi/180, ail*pi/180, rdr*pi/180, \
                                                   p, q, r, cbar, b, vt, xcg, xcgr)
+
+    # multipliers adjustement
+    if multipliers is not None:
+        cxt *= multipliers[1]
+        cyt *= multipliers[2]
+        czt *= multipliers[3]
+
+        clt *= multipliers[4]
+        cmt *= multipliers[5]
+        cnt *= multipliers[6]
 
     # add damping derivatives
 

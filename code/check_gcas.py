@@ -51,10 +51,21 @@ def main():
 
     tMax = 15 # simulation time
 
-    der_func = lambda t, y: controlledF16(t, y, f16_plant, ap, llc)[0]
+    val = 0.5
+    xcg_mult = 1.0
+    cxt_mult = val
+    cyt_mult = val
+    czt_mult = val
+    clt_mult = val
+    cmt_mult = val
+    cnt_mult = val
 
-    passed, times, states, modes, ps_list, Nz_list = RunF16Sim(initialState, tMax, der_func, f16_plant, \
-                                                               ap, llc, pass_fail)
+    multipliers = (xcg_mult, cxt_mult, cyt_mult, czt_mult, clt_mult, cmt_mult, cnt_mult)
+
+    der_func = lambda t, y: controlledF16(t, y, f16_plant, ap, llc, multipliers=multipliers)[0]
+
+    passed, times, states, modes, ps_list, Nz_list, u_list = RunF16Sim(\
+        initialState, tMax, der_func, f16_plant, ap, llc, pass_fail, multipliers=multipliers)
 
     print "Simulation Conditions Passed: {}".format(passed)
 

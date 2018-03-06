@@ -24,7 +24,7 @@ def main():
     flightLimits = FlightLimits()
     llc = LowLevelController(ctrlLimits)
 
-    setpoint = 500 # altitude setpoint
+    setpoint = 800 # altitude setpoint
     ap = FixedAltitudeAutopilot(setpoint, llc.xequil, llc.uequil, flightLimits, ctrlLimits)
 
     pass_fail = FlightLimitsPFA(flightLimits)
@@ -37,7 +37,7 @@ def main():
     alpha = 0 # angle of attack (rad)
     beta = 0  # Side slip angle (rad)
 
-    alt = 550 # Initial Attitude
+    alt = 500 # Initial Attitude
     Vt = 540 # Initial Speed
     phi = 0
     theta = alpha
