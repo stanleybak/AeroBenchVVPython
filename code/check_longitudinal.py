@@ -24,7 +24,7 @@ def main():
     flightLimits = FlightLimits()
     llc = LowLevelController(ctrlLimits)
 
-    setpoint = 800 # altitude setpoint
+    setpoint = 550 # altitude setpoint
     ap = FixedAltitudeAutopilot(setpoint, llc.xequil, llc.uequil, flightLimits, ctrlLimits)
 
     pass_fail = FlightLimitsPFA(flightLimits)

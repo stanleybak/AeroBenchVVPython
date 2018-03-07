@@ -51,8 +51,9 @@ def main():
 
     tMax = 15 # simulation time
 
-    val = 0.5
-    xcg_mult = 1.0
+    xcg_mult = 1.0 # center of gravity multiplier
+
+    val = 1.0      # other aerodynmic coefficient multipliers
     cxt_mult = val
     cyt_mult = val
     czt_mult = val
