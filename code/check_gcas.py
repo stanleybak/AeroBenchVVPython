@@ -13,7 +13,7 @@ from LowLevelController import LowLevelController
 from Autopilot import GcasAutopilot
 from controlledF16 import controlledF16
 
-from plot3d_anim import plot3d_anim
+from plot import plot3d_anim
 
 def main():
     'main function'
