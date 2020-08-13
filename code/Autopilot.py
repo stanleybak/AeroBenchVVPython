@@ -75,10 +75,10 @@ class Autopilot(Freezable):
 class GcasAutopilot(Autopilot):
     '''The ground-collision avoidance system autopilot logic'''
 
-    STATE_START = 'Waiting'
+    STATE_START = 'Standby'
     STATE_ROLL = 'Roll'
     STATE_PULL = 'Pull'
-    STATE_DONE = 'Finished'
+    STATE_DONE = 'Level Flight'
 
     def __init__(self, xequil, uequil, flightLimits, ctrlLimits):
         Autopilot.__init__(self, xequil, uequil, flightLimits, ctrlLimits)

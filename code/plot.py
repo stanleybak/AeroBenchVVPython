@@ -15,6 +15,7 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 
 from scipy.io import loadmat
+from Autopilot import GcasAutopilot
 
 def scale3d(pts, scale_list):
     'scale a 3d ndarray of points, and return the new ndarray'
@@ -126,6 +127,8 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
     def anim_func(frame):
         'updates for the animation frame'
 
+        print("{}/{}".format(frame, frames))
+
         speed = states[frame][0]
         alpha = states[frame][1]
         beta = states[frame][2]
@@ -138,7 +141,13 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
         dz = states[frame][11]
 
         time_text.set_text('t = {:.2f} sec'.format(times[frame]))
-        mode_text.set_text('Mode: {}'.format(modes[frame]))
+
+        colorMap = {GcasAutopilot.STATE_START:'red', GcasAutopilot.STATE_ROLL: 'blue', \
+                    GcasAutopilot.STATE_PULL:'green', GcasAutopilot.STATE_DONE:'magenta'}
+        mode = modes[frame]
+        col = colorMap[mode]
+        mode_text.set_color(col)
+        mode_text.set_text('Mode: {}'.format(mode))
 
         alt_text.set_text('h = {:.2f} ft'.format(alt))
         v_text.set_text('V = {:.2f} ft/sec'.format(speed))
@@ -216,7 +225,7 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
             anim_obj.save(filename, dpi=80, writer='imagemagick')
             print "Finished saving to {} in {:.1f} sec".format(filename, time.time() - start)
         else:
-            fps = 50
+            fps = 60
             codec = 'libx264'
 
             print "\nSaving '{}' at {:.2f} fps using ffmpeg with codec '{}'.".format(
