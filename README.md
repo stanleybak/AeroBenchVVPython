@@ -1,6 +1,6 @@
 ﻿<p align="center"> <img src="gcas_py.gif"/> </p>
 
-Note: This is the v1 branch of the code, which corresponds to the original publication version and benchmarks.
+Note: This is the v2 branch of the code, which is now a python3 project and includes more modularity and general simulation capabilities. For the original benchmark paper version see the v1 branch.
 
 # AeroBenchVVPython Overview
 This project contains a python version of models and controllers that test automated aircraft maneuvers by performing simulations. The hope is to provide a benchmark to motivate better verification and analysis methods, working beyond models based on Dubins car dynamics, towards the sorts of models used in aerospace engineering. Roughly speaking, the dynamics are nonlinear, have about 10-20 dimensions (continuous state variables), and hybrid in the sense of discontinuous ODEs, but not with jumps in the state. 
@@ -26,7 +26,7 @@ The following Python libraries are required (can be installed using `sudo pip in
 
 `control` - for control design (not needed for simulation)
 
-
-
 ### Release Documentation
-Distribution A: Approved for Public Release (88ABW-2017-6379)
+Distribution A: Approved for Public Release (88ABW-2020-2188) (changes in this version)
+    
+Distribution A: Approved for Public Release (88ABW-2017-6379) (v1)
