@@ -1,0 +1,8 @@
+font.family : serif
+xtick.labelsize : 14
+ytick.labelsize : 14
+
+axes.labelsize : 20
+axes.titlesize : 28
+    
+path.simplify : False 
