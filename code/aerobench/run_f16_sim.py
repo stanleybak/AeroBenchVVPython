@@ -4,7 +4,6 @@ run_f16_sim python version
 '''
 
 import time
-import math
 
 import numpy as np
 from scipy.integrate import RK45
@@ -12,7 +11,8 @@ from scipy.integrate import RK45
 from aerobench.highlevel.controlled_f16 import controlled_f16
 from aerobench.util import get_state_names, Euler
 
-def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model_str='morelli'):
+def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model_str='morelli',
+                integrator_str='rk45', v2_integrators=False):
     '''Simulates and analyzes autonomous F-16 maneuvers
 
     returns a dict with the following keys:
@@ -46,7 +46,7 @@ def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model
     modes = [ap.state]
 
     if extended_states:
-        xd, u, Nz, ps, Ny_r = controlled_f16(times[-1], states[-1], ap, model_str)
+        xd, u, Nz, ps, Ny_r = controlled_f16(times[-1], states[-1], ap, model_str, v2_integrators)
 
         xd_list = [xd]
         Nz_list = [Nz]
@@ -54,20 +54,29 @@ def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model
         u_list = [u]
         Ny_r_list = [Ny_r]
 
-    der_func = lambda t, y: controlled_f16(t, y, ap, model_str)[0]
+    der_func = lambda t, y: controlled_f16(t, y, ap, model_str, v2_integrators)[0]
 
-    #print("using euler instead of rk45")
-    #rk45 = Euler(der_func, step, times[-1], states[-1], tmax)
-    rk45 = RK45(der_func, times[-1], states[-1], tmax)
+    if integrator_str == 'rk45':
+        integrator_class = RK45
+        kwargs = {}
+    else:
+        assert integrator_str == 'euler'
+        integrator_class = Euler
+        kwargs = {'step': step}
 
-    while rk45.status == 'running':
-        rk45.step()
+    # note: fixed_step argument is unused by rk45, used with euler
+    integrator = integrator_class(der_func, times[-1], states[-1], tmax, **kwargs)
 
-        if rk45.t >= times[-1] + step:
-            dense_output = rk45.dense_output()
+    while integrator.status == 'running':
+        integrator.step()
 
-            while rk45.t >= times[-1] + step:
+        if integrator.t >= times[-1] + step:
+            dense_output = integrator.dense_output()
+
+            while integrator.t >= times[-1] + step:
                 t = times[-1] + step
+                #print(f"{round(t, 2)} / {tmax}")
+
                 times.append(t)
                 states.append(dense_output(t))
 
@@ -76,7 +85,7 @@ def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model
 
                 # re-run dynamics function at current state to get non-state variables
                 if extended_states:
-                    xd, u, Nz, ps, Ny_r = controlled_f16(times[-1], states[-1], ap, model_str)
+                    xd, u, Nz, ps, Ny_r = controlled_f16(times[-1], states[-1], ap, model_str, v2_integrators)
 
                     Nz_list.append(Nz)
                     ps_list.append(ps)
@@ -86,13 +95,13 @@ def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model
                     xd_list.append(xd)
 
                 if updated:
-                    rk45 = RK45(der_func, times[-1], states[-1], tmax)
+                    integrator = integrator_class(der_func, times[-1], states[-1], tmax, **kwargs)
                     break
 
-    assert rk45.status == 'finished'
+    assert integrator.status == 'finished'
                 
     res = {}
-    res['status'] = rk45.status
+    res['status'] = integrator.status
     res['times'] = times
     res['states'] = np.array(states, dtype=float)
     res['modes'] = modes

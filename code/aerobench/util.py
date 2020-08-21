@@ -26,8 +26,8 @@ class Euler(Freezable):
     loosely based on scipy.integrate.RK45
     '''
 
-    def __init__(self, der_func, step, tstart, ystart, tend, time_tol=1e-9):
-        assert step > 0
+    def __init__(self, der_func, tstart, ystart, tend, step=0, time_tol=1e-9):
+        assert step > 0, "arg step > 0 required in Euler integrator"
         assert tend > tstart
 
         self.der_func = der_func # signature (t, x)

@@ -15,7 +15,7 @@ from aerobench.lowlevel.low_level_controller import LowLevelController
 class GcasAutopilot(Autopilot):
     '''ground collision avoidance autopilot'''
 
-    def __init__(self, init_mode='standby', gain_str='optimized', stdout=False):
+    def __init__(self, init_mode='standby', gain_str='old', stdout=False):
 
         # one of 'standby', 'roll', 'pull'
         self.mode = init_mode
@@ -147,3 +147,6 @@ class GcasAutopilot(Autopilot):
         rv[1] = ps
 
         return rv
+
+if __name__ == '__main__':
+    print("The correct high-level script to run is run_GCAS.py or run_GCAS_inverted.py")

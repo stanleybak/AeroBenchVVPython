@@ -13,7 +13,7 @@ from aerobench.lowlevel.subf16_model import subf16_model
 from aerobench.lowlevel.low_level_controller import LowLevelController
 from aerobench.highlevel.autopilot import Autopilot
 
-def controlled_f16(t, x_f16, autopilot, f16_model='morelli'):
+def controlled_f16(t, x_f16, autopilot, f16_model='morelli', v2_integrators=False):
     'returns the LQR-controlled F-16 state derivatives and more'
 
     assert isinstance(x_f16, np.ndarray)
@@ -32,11 +32,17 @@ def controlled_f16(t, x_f16, autopilot, f16_model='morelli'):
     # Note: Control vector (u) for subF16 is in units of degrees
     xd_model, Nz, Ny, _, _ = subf16_model(x_f16[0:13], u_deg, f16_model)
 
-    # Nonlinear (Actual): ps = p * cos(alpha) + r * sin(alpha)
-    ps = x_ctrl[4] * cos(x_ctrl[0]) + x_ctrl[5] * sin(x_ctrl[0])
+    if v2_integrators:
+        # integrators from matlab v2 model
+        ps = xd_model[6] * cos(xd_model[1]) + xd_model[8] * sin(xd_model[1])
+        
+        Ny_r = Ny + xd_model[8]
+    else:
+        # Nonlinear (Actual): ps = p * cos(alpha) + r * sin(alpha)
+        ps = x_ctrl[4] * cos(x_ctrl[0]) + x_ctrl[5] * sin(x_ctrl[0])
 
-    # Calculate (side force + yaw rate) term
-    Ny_r = Ny + x_ctrl[5]
+        # Calculate (side force + yaw rate) term
+        Ny_r = Ny + x_ctrl[5]
 
     xd = np.zeros((x_f16.shape[0],))
     xd[:len(xd_model)] = xd_model
@@ -44,7 +50,7 @@ def controlled_f16(t, x_f16, autopilot, f16_model='morelli'):
     # integrators from low-level controller
     start = len(xd_model)
     end = start + llc.get_num_integrators()
-    int_der = llc.get_integrator_derivatives(t, x_f16, u_ref, x_ctrl, Nz, Ny)
+    int_der = llc.get_integrator_derivatives(t, x_f16, u_ref, Nz, ps, Ny_r)
 
     xd[start:end] = int_der
 

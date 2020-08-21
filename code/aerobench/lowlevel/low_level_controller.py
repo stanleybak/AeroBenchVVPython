@@ -30,24 +30,16 @@ class LowLevelController(Freezable):
     '''low level flight controller
     '''
 
-    def __init__(self, gain_str='optimized'):
+    def __init__(self, gain_str='old'):
         # Hard coded LQR gain matrix from matlab version
 
-        if gain_str == 'optimized':
-            K_long = np.array([-160.998647049049, -32.334552437376, -40.660660513477])
+        assert gain_str == 'old'
 
-            lat = []
-            lat.append([88864.8347405067, -28614.8001820781, -24453.4715885781, -296335.376652985, -238042.385417822])
-            lat.append([22.4583844935698, 1.69450127748438, -18.7358422733594, 6.90060321353617, -63.9288916169339])
-            K_lat = np.array(lat)
-        else:
-            assert gain_str == 'old'
+        # Longitudinal Gains
+        K_long = np.array([[-156.8801506723475, -31.037008068526642, -38.72983346216317]], dtype=float)
 
-            # Longitudinal Gains
-            K_long = np.array([[-156.8801506723475, -31.037008068526642, -38.72983346216317]], dtype=float)
-
-            K_lat = np.array([[37.84483, -25.40956, -6.82876, -332.88343, -17.15997],
-                              [-23.91233, 5.69968, -21.63431, 64.49490, -88.36203]], dtype=float)
+        K_lat = np.array([[37.84483, -25.40956, -6.82876, -332.88343, -17.15997],
+                          [-23.91233, 5.69968, -21.63431, 64.49490, -88.36203]], dtype=float)
 
         self.K_lqr = np.zeros((3, 8))
         self.K_lqr[:1, :3] = K_long
@@ -108,13 +100,7 @@ class LowLevelController(Freezable):
 
         return 3
 
-    def get_integrator_derivatives(self, t, x_f16, u_ref, x_ctrl, Nz, Ny):
+    def get_integrator_derivatives(self, t, x_f16, u_ref, Nz, ps, Ny_r):
         'get the derivatives of the integrators in the low-level controller'
-
-        # Nonlinear (Actual): ps = p * cos(alpha) + r * sin(alpha)
-        ps = x_ctrl[4] * cos(x_ctrl[0]) + x_ctrl[5] * sin(x_ctrl[0])
-
-        # Calculate (side force + yaw rate) term
-        Ny_r = Ny + x_ctrl[5]
 
         return [Nz - u_ref[0], ps - u_ref[1], Ny_r - u_ref[2]]

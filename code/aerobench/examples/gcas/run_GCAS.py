@@ -37,7 +37,6 @@ def main():
     init = [vt, alpha, beta, phi, theta, psi, 0, 0, 0, 0, 0, alt, power]
     tmax = 3.51 # simulation time
 
-    
     ap = GcasAutopilot(init_mode='roll', stdout=True, gain_str='old')
 
     step = 1/30
