@@ -1,42 +1,58 @@
-'''gcas autopilot
+'''waypoint autopilot
 
-copied from matlab v2
+ported from matlab v2
 '''
 
-import math
+from math import pi, atan2, sqrt, sin, cos, asin
 
 import numpy as np
-from numpy import deg2rad
 
 from aerobench.highlevel.autopilot import Autopilot
 from aerobench.util import StateIndex
 from aerobench.lowlevel.low_level_controller import LowLevelController
 
-class GcasAutopilot(Autopilot):
-    '''ground collision avoidance autopilot'''
+class WaypointAutopilot(Autopilot):
+    '''waypoint follower autopilot'''
 
-    def __init__(self, init_mode='standby', gain_str='old', stdout=False):
+    def __init__(self, waypoints, gain_str='old', stdout=False):
+        'waypoints is a list of 3-tuples'
 
-        # one of 'standby', 'roll', 'pull'
-        self.mode = init_mode
-
-        # config
-        self.cfg_eps_phi = deg2rad(5)       # Max abs roll angle before pull
-        self.cfg_eps_p = deg2rad(10)        # Max abs roll rate before pull
-        self.cfg_path_goal = deg2rad(0)     # Min path angle before completion
-        self.cfg_k_prop = 4                 # Proportional control gain
-        self.cfg_k_der = 2                  # Derivative control gain
-        self.cfg_flight_deck = 1000         # Altitude at which GCAS activates
-        self.cfg_min_pull_time = 2          # Min duration of pull up
-
-        self.cfg_nz_des = 5
-
-        self.pull_start_time = 0
         self.stdout = stdout
+        self.waypoints = waypoints
+        self.waypoint_index = 0
+
+        # waypoint config
+        self.cfg_slant_range_threshold = 250
+
+        # default control when not waypoint tracking
+        self.cfg_u_ol_default = (0, 0, 0, 0.3)
+
+        # control config
+        # Gains for speed control
+        self.cfg_k_vt = 0.25
+        self.cfg_airspeed = 550
+
+        # Gains for altitude tracking
+        self.cfg_k_alt = 0.005
+        self.cfg_k_h_dot = 0.02
+
+        # Gains for heading tracking
+        self.cfg_k_prop_psi = 5
+        self.cfg_k_der_psi = 0.5
+
+        # Gains for roll tracking
+        self.cfg_k_prop_phi = 0.75
+        self.cfg_k_der_phi = 0.5
+        self.cfg_max_bank_deg = 65 # maximum bank angle setpoint
+        # v2 was 0.5, 0.9
+
+        # Gains for Nz
+        self.cfg_max_nz_cmd = 4
+        self.cfg_min_nz_cmd = -1
 
         llc = LowLevelController(gain_str=gain_str)
 
-        Autopilot.__init__(self, llc=llc)
+        Autopilot.__init__(self, 'tracking_waypoint_0', llc=llc)
 
     def log(self, s):
         'print to terminal if stdout is true'
@@ -44,26 +60,146 @@ class GcasAutopilot(Autopilot):
         if self.stdout:
             print(s)
 
+    def _get_u_ref(self, _t, x_f16):
+        '''get the reference input signals'''
+
+        if not self.is_finished():
+            psi_cmd = self.get_waypoint_data(x_f16)[0]
+
+            # Get desired roll angle given desired heading
+            phi_cmd = self.get_phi_to_track_heading(x_f16, psi_cmd)
+            ps_cmd = self.track_roll_angle(x_f16, phi_cmd)
+
+            nz_cmd = self.track_altitude(x_f16)
+            throttle = self.track_airspeed(x_f16)
+        else:
+           # Waypoint Following complete: fly level.
+            throttle = self.track_airspeed(x_f16)
+            ps_cmd = self.track_roll_angle(x_f16, 0)
+            nz_cmd = self.track_altitude_wings_level(x_f16)
+
+        # trim to limits
+        nz_cmd = max(self.cfg_min_nz_cmd, min(self.cfg_max_nz_cmd, nz_cmd))
+        throttle = max(min(throttle, 1), 0)
+
+        # Create reference vector
+        rv = [nz_cmd, ps_cmd, 0, throttle]
+
+        return rv
+
+    def track_altitude(self, x_f16):
+        'get nz to track altitude, taking turning into account'
+
+        h_cmd = self.waypoints[self.waypoint_index][2]
+
+        h = x_f16[StateIndex.ALT]
+        phi = x_f16[StateIndex.PHI]
+
+        # Calculate altitude error (positive => below target alt)
+        h_error = h_cmd - h
+        nz_alt = self.track_altitude_wings_level(x_f16)
+        nz_roll = get_nz_for_level_turn_ol(x_f16)
+
+        if h_error > 0:
+            # Ascend wings level or banked
+            nz = nz_alt + nz_roll
+        elif abs(phi) < np.deg2rad(15):
+            # Descend wings (close enough to) level
+            nz = nz_alt + nz_roll
+        else:
+            # Descend in bank (no negative Gs)
+            nz = max(0, nz_alt + nz_roll)
+
+        return nz
+
+    def get_phi_to_track_heading(self, x_f16, psi_cmd):
+        'get phi from psi_cmd'
+
+        # PD Control on heading angle using phi_cmd as control
+
+        # Pull out important variables for ease of use
+        psi = wrap_to_pi(x_f16[StateIndex.PSI])
+        r = x_f16[StateIndex.R]
+
+        # Calculate PD control
+        psi_err = wrap_to_pi(psi_cmd - psi)
+
+        phi_cmd = psi_err * self.cfg_k_prop_psi - r * self.cfg_k_der_psi
+
+        # Bound to acceptable bank angles:
+        max_bank_rad = np.deg2rad(self.cfg_max_bank_deg)
+
+        phi_cmd = min(max(phi_cmd, -max_bank_rad), max_bank_rad)
+
+        return phi_cmd
+
+    def track_roll_angle(self, x_f16, phi_cmd):
+        'get roll angle command (ps_cmd)'
+
+        # PD control on roll angle using stability roll rate
+
+        # Pull out important variables for ease of use
+        phi = x_f16[StateIndex.PHI]
+        p = x_f16[StateIndex.P]
+
+        # Calculate PD control
+        ps = (phi_cmd-phi) * self.cfg_k_prop_phi - p * self.cfg_k_der_phi
+
+        return ps
+
+    def track_airspeed(self, x_f16):
+        'get throttle command'
+
+        vt_cmd = self.cfg_airspeed
+
+        # Proportional control on airspeed using throttle
+        throttle = self.cfg_k_vt * (vt_cmd - x_f16[StateIndex.VT])
+
+        return throttle
+
+    def track_altitude_wings_level(self, x_f16):
+        'get nz to track altitude'
+
+        i = self.waypoint_index if self.waypoint_index < len(self.waypoints) else -1
+
+        h_cmd = self.waypoints[i][2]
+
+        vt = x_f16[StateIndex.VT]
+        h = x_f16[StateIndex.ALT]
+
+        # Proportional-Derivative Control
+        h_error = h_cmd - h
+        gamma = get_path_angle(x_f16)
+        h_dot = vt * sin(gamma) # Calculated, not differentiated
+
+        # Calculate Nz command
+        nz = self.cfg_k_alt*h_error - self.cfg_k_h_dot*h_dot
+
+        return nz
+
+    def is_finished(self):
+        'is the maneuver done?'
+
+        return self.waypoint_index >= len(self.waypoints)
+
     def advance_discrete_state(self, t, x_f16):
         '''
         advance the discrete state based on the current aircraft state. Returns True iff the discrete state
         has changed.
         '''
 
+        if self.waypoint_index < len(self.waypoints):
+            slant_range = self.get_waypoint_data(x_f16)[-1]
+
+            if slant_range < self.cfg_slant_range_threshold:
+                self.waypoint_index += 1
+
         premode = self.mode
 
-        if self.mode == 'standby':
-            if not self.is_nose_high_enough(x_f16) and not self.is_above_flight_deck(x_f16):
-                self.mode = 'roll'
-        elif self.mode == 'roll':
-            if self.is_roll_rate_low(x_f16) and self.are_wings_level(x_f16):
-                self.mode = 'pull'
-                self.pull_start_time = t
+        if self.waypoint_index >= len(self.waypoints):
+            self.mode = 'done'
         else:
-            assert self.mode == 'pull'
-
-            if self.is_nose_high_enough(x_f16) and t >= self.pull_start_time + self.cfg_min_pull_time:
-                self.mode = 'standby'
+            self.mode = f'tracking_waypoint_{self.waypoint_index}'
 
         rv = premode != self.mode
 
@@ -72,81 +208,93 @@ class GcasAutopilot(Autopilot):
 
         return rv
 
-    def are_wings_level(self, x_f16):
-        'are the wings level?'
+    def get_waypoint_data(self, x_f16):
+        '''returns current waypoint data tuple based on the current waypoint:
 
-        phi = x_f16[StateIndex.PHI]
+        (heading, inclination, horiz_range, vert_range, slant_range)
 
-        radsFromWingsLevel = round(phi / (2 * math.pi))
+        heading = heading to tgt, equivalent to psi (rad)
+        inclination = polar angle to tgt, equivalent to theta (rad)
+        horiz_range = horizontal range to tgt (ft)
+        vert_range = vertical range to tgt (ft)
+        slant_range = total range to tgt (ft)
+        '''
 
-        return abs(phi - (2 * math.pi)  * radsFromWingsLevel) < self.cfg_eps_phi
+        waypoint = self.waypoints[self.waypoint_index]
 
-    def is_roll_rate_low(self, x_f16):
-        'is the roll rate low enough to switch to pull?'
-
-        p = x_f16[StateIndex.P]
-
-        return abs(p) < self.cfg_eps_p
-
-    def is_above_flight_deck(self, x_f16):
-        'is the aircraft above the flight deck?'
-
+        e_pos = x_f16[StateIndex.POSE]
+        n_pos = x_f16[StateIndex.POSN]
         alt = x_f16[StateIndex.ALT]
 
-        return alt >= self.cfg_flight_deck
+        delta = [waypoint[i] - [e_pos, n_pos, alt][i] for i in range(3)]
 
-    def is_nose_high_enough(self, x_f16):
-        'is the nose high enough?'
+        _, inclination, slant_range = cart2sph(delta)
 
-        theta = x_f16[StateIndex.THETA]
-        alpha = x_f16[StateIndex.ALPHA]
+        heading = wrap_to_pi(pi/2 - atan2(delta[1], delta[0]))
 
-        # Determine which angle is "level" (0, 360, 720, etc)
-        radsFromNoseLevel = round((theta-alpha)/(2 * math.pi))
+        horiz_range = np.linalg.norm(delta[0:2])
+        vert_range = np.linalg.norm(delta[2])
 
-        # Evaluate boolean
-        return (theta-alpha) - 2 * math.pi * radsFromNoseLevel > self.cfg_path_goal
+        return heading, inclination, horiz_range, vert_range, slant_range
 
-    def _get_u_ref(self, _t, x_f16):
-        '''get the reference input signals'''
+def get_nz_for_level_turn_ol(x_f16):
+    'get nz to do a level turn'
 
-        if self.mode == 'standby':
-            rv = np.zeros(4)
-        elif self.mode == 'roll':
-            rv = self.roll_wings_level(x_f16)
-        else:
-            assert self.mode == 'pull'
-            rv = self.pull_nose_level()
+    # Pull g's to maintain altitude during bank based on trig
 
-        return rv
+    # Calculate theta
+    phi = x_f16[StateIndex.PHI]
 
-    def pull_nose_level(self):
-        'get commands in mode PULL'
+    if abs(phi): # if cos(phi) ~= 0, basically
+        nz = 1 / cos(phi) - 1 # Keeps plane at altitude
+    else:
+        nz = 0
 
-        rv = np.zeros(4)
+    return nz
 
-        rv[0] = self.cfg_nz_des
+def get_path_angle(x_f16):
+    'get the path angle gamma'
 
-        return rv
+    alpha = x_f16[StateIndex.ALPHA]       # AoA           (rad)
+    beta = x_f16[StateIndex.BETA]         # Sideslip      (rad)
+    phi = x_f16[StateIndex.PHI]           # Roll anle     (rad)
+    theta = x_f16[StateIndex.THETA]       # Pitch angle   (rad)
 
-    def roll_wings_level(self, x_f16):
-        'get commands in mode ROLL'
+    gamma = asin((cos(alpha)*sin(theta)- \
+        sin(alpha)*cos(theta)*cos(phi))*cos(beta) - \
+        (cos(theta)*sin(phi))*sin(beta))
 
-        phi = x_f16[StateIndex.PHI]
-        p = x_f16[StateIndex.P]
+    return gamma
 
-        rv = np.zeros(4)
+def wrap_to_pi(psi_rad):
+    '''handle angle wrapping
 
-        # Determine which angle is "level" (0, 360, 720, etc)
-        radsFromWingsLevel = round(phi / (2 * math.pi))
+    returns equivelent angle in range [-pi, pi]
+    '''
 
-        # PD Control until phi == pi * radsFromWingsLevel
-        ps = -(phi - (2 * math.pi) * radsFromWingsLevel) * self.cfg_k_prop - p * self.cfg_k_der
+    rv = psi_rad % (2 * pi)
 
-        # Build commands to roll wings level
-        rv[1] = ps
+    if rv > pi:
+        rv -= 2 * pi
 
-        return rv
+    return rv
+
+def cart2sph(pt3d):
+    '''
+    Cartesian to spherical coordinates
+
+    returns az, elev, r
+    '''
+
+    x, y, z = pt3d
+
+    h = sqrt(x*x + y*y)
+    r = sqrt(h*h + z*z)
+
+    elev = atan2(z, h)
+    az = atan2(y, x)
+
+    return az, elev, r
 
 if __name__ == '__main__':
-    print("The correct high-level script to run is run_GCAS.py or run_GCAS_inverted.py")
+    print("Autopulot script not meant to be run directly.")

@@ -17,8 +17,7 @@ class GcasAutopilot(Autopilot):
 
     def __init__(self, init_mode='standby', gain_str='old', stdout=False):
 
-        # one of 'standby', 'roll', 'pull'
-        self.mode = init_mode
+        assert init_mode in ['standby', 'roll', 'pull']
 
         # config
         self.cfg_eps_phi = deg2rad(5)       # Max abs roll angle before pull
@@ -36,7 +35,7 @@ class GcasAutopilot(Autopilot):
 
         llc = LowLevelController(gain_str=gain_str)
 
-        Autopilot.__init__(self, llc=llc)
+        Autopilot.__init__(self, init_mode, llc=llc)
 
     def log(self, s):
         'print to terminal if stdout is true'

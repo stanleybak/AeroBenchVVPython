@@ -43,7 +43,7 @@ def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model
     # run the numerical simulation
     times = [0]
     states = [x0]
-    modes = [ap.state]
+    modes = [ap.mode]
 
     if extended_states:
         xd, u, Nz, ps, Ny_r = controlled_f16(times[-1], states[-1], ap, model_str, v2_integrators)
@@ -81,7 +81,7 @@ def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model
                 states.append(dense_output(t))
 
                 updated = ap.advance_discrete_state(times[-1], states[-1])
-                modes.append(ap.state)
+                modes.append(ap.mode)
 
                 # re-run dynamics function at current state to get non-state variables
                 if extended_states:
@@ -94,12 +94,17 @@ def run_f16_sim(initial_state, tmax, ap, step=0.01, extended_states=False, model
                     Ny_r_list.append(Ny_r)
                     xd_list.append(xd)
 
+                if ap.is_finished():
+                    # this both causes the outer loop to exit and sets res['status'] appropriately
+                    integrator.status = 'autopilot finished'
+                    break
+                    
                 if updated:
                     integrator = integrator_class(der_func, times[-1], states[-1], tmax, **kwargs)
                     break
 
-    assert integrator.status == 'finished'
-                
+    assert 'finished' in integrator.status
+    
     res = {}
     res['status'] = integrator.status
     res['times'] = times
