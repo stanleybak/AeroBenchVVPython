@@ -60,7 +60,7 @@ class WaypointAutopilot(Autopilot):
         if self.stdout:
             print(s)
 
-    def _get_u_ref(self, _t, x_f16):
+    def get_u_ref(self, _t, x_f16):
         '''get the reference input signals'''
 
         if not self.is_finished():
@@ -182,7 +182,7 @@ class WaypointAutopilot(Autopilot):
 
         return self.waypoint_index >= len(self.waypoints)
 
-    def advance_discrete_state(self, t, x_f16):
+    def advance_discrete_mode(self, t, x_f16):
         '''
         advance the discrete state based on the current aircraft state. Returns True iff the discrete state
         has changed.

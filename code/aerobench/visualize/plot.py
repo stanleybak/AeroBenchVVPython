@@ -265,7 +265,7 @@ def plot3d_anim(times, states, modes, ps_list, Nz_list, skip=1, filename=None):
     else:
         plt.show()
 
-def plot_overhead(run_sim_result, waypoints=None):
+def plot_overhead(run_sim_result, waypoints=None, llc=None):
     '''altitude over time plot from run_f16_sum result object
 
     note: call plt.show() afterwards to have plot show up
@@ -278,14 +278,25 @@ def plot_overhead(run_sim_result, waypoints=None):
 
     ax = fig.add_subplot(1, 1, 1)
 
-    states = res['states']
+    full_states = res['states']
 
-    ys = states[:, 9] # 9: n/s position (ft)
-    xs = states[:, 10] # 10: e/w position (ft)
+    if llc is not None:
+        num_vars = len(get_state_names()) + llc.get_num_integrators()
+        num_aircraft = full_states[0, :].size // num_vars
+    else:
+        num_vars = full_states[0, :].size
+        num_aircraft = 1
 
-    ax.plot(xs, ys, '-')
+    for i in range(num_aircraft):
+        states = full_states[:, i*num_vars:(i+1)*num_vars]
 
-    ax.plot([xs[0]], [ys[1]], 'k*', ms=8, label='Start')
+        ys = states[:, StateIndex.POSN] # 9: n/s position (ft)
+        xs = states[:, StateIndex.POSE] # 10: e/w position (ft)
+
+        ax.plot(xs, ys, '-')
+
+        label = 'Start' if i == 0 else None
+        ax.plot([xs[0]], [ys[1]], 'k*', ms=8, label=label)
 
     if waypoints is not None:
         xs = [wp[0] for wp in waypoints]

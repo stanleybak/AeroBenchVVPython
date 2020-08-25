@@ -5,6 +5,33 @@ Utilities for F-16 GCAS
 from math import floor, ceil
 import numpy as np
 
+class StateIndex:
+    'list of static state indices'
+
+    VT = 0
+    VEL = 0 # alias
+    
+    ALPHA = 1
+    BETA = 2
+    PHI = 3
+    THETA = 4
+    PSI = 5
+    
+    P = 6
+    Q = 7
+    R = 8
+    
+    POSN = 9
+    POS_N = 9
+    
+    POSE = 10
+    POS_E = 10
+    
+    ALT = 11
+    H = 11
+    
+    POW = 12
+
 class Freezable():
     'a class where you can freeze the fields (prevent new fields from being created)'
 
@@ -81,23 +108,6 @@ class Euler(Freezable):
             return self.yprev + dydt * deltat
 
         return fun
-
-class StateIndex:
-    'list of static state indices'
-    
-    VT = 0
-    ALPHA = 1
-    BETA = 2
-    PHI = 3
-    THETA = 4
-    PSI = 5
-    P = 6
-    Q = 7
-    R = 8
-    POSN = 9
-    POSE = 10
-    ALT = 11
-    POW = 12
 
 def get_state_names():
     'returns a list of state variable names'
@@ -189,5 +199,32 @@ def sign(ele):
         rv = 0
     else:
         rv = 1
+
+    return rv
+
+def extract_single_result(res, index, llc):
+    'extract a res object for a sinlge aircraft from a multi-aircraft simulation'
+
+    num_vars = len(get_state_names()) + llc.get_num_integrators()
+    num_aircraft = res['states'][0].size // num_vars
+
+    if num_aircraft == 1:
+        assert index == 0
+        rv = res
+    else:
+        rv = {}
+        rv['status'] = res['status']
+        rv['times'] = res['times']
+        rv['modes'] = res['modes']
+
+        full_states = res['states']
+        rv['states'] = full_states[:, num_vars*index:num_vars*(index+1)]
+
+        if 'xd_list' in res:
+            # extended states
+            key_list = ['xd_list', 'ps_list', 'Nz_list', 'Ny_r_list', 'u_list']
+
+            for key in key_list:
+                rv[key] = [tup[index] for tup in res[key]]
 
     return rv

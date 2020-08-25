@@ -47,7 +47,7 @@ def main():
     step = 1/30
     extended_states = True
     res = run_f16_sim(init, tmax, ap, step=step, extended_states=extended_states, integrator_str='rk45')
-
+    
     print(f"Simulation Completed in {round(res['runtime'], 2)} seconds (extended_states={extended_states})")
 
     plot.plot_single(res, 'alt', title='Altitude (ft)')

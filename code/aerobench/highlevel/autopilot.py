@@ -52,41 +52,32 @@ class Autopilot(Freezable):
         return False
 
     @abc.abstractmethod
-    def _get_u_ref(self, t, x_f16):
-        '''
-        for the current discrete state, get the reference inputs signals
-
-        returns a tuple: Nz, ps, Ny_r, throttle
-        '''
-        
-        return
-
     def get_u_ref(self, t, x_f16):
         '''
-        for the current discrete state, get the reference inputs signals
+        for the current discrete state, get the reference inputs signals. Override this one
+        in subclasses.
 
-        returns an np.ndarray: u_ref = [Nz, ps, Ny_r, throttle]
+        returns four values per aircraft: Nz, ps, Ny_r, throttle
         '''
 
-        Nz, ps, Ny_r, throttle = self._get_u_ref(t, x_f16)
+        return
 
-        assert Nz <= self.llc.ctrlLimits.NzMax, "autopilot commanded too low Nz ({})".format(Nz)
-        assert Nz >= self.llc.ctrlLimits.NzMin, "autopilot commanded too high Nz ({})".format(Nz)
+    def get_checked_u_ref(self, t, x_f16):
+        '''
+        for the current discrete state, get the reference inputs signals and check them against ctrl limits
+        '''
 
-        u_ref = np.array([Nz, ps, Ny_r, throttle], dtype=float)
+        rv = np.array(self.get_u_ref(t, x_f16), dtype=float)
 
-        return u_ref
+        assert rv.size % 4 == 0, "get_u_ref should return Nz, ps, Ny_r, throttle for each aircraft"
 
-    def get_num_integrators(self):
-        'get the number of integrators in the autopilot'
+        for i in range(rv.size //4):
+            Nz, _ps, _Ny_r, _throttle = rv[4*i:4*(i+1)]
 
-        return 0
+            l, u = self.llc.ctrlLimits.NzMin, self.llc.ctrlLimits.NzMax
+            assert l <= Nz <= u, f"autopilot commanded invalid Nz ({Nz}). Not in range [{l}, {u}]"
 
-    def get_integrator_derivatives(self, t, x_f16, u_ref, x_ctrl, Nz, Ny):
-        'get the derivatives of the integrators in the autopilot'
-
-        return []
-
+        return rv
 
 class FixedSpeedAutopilot(Autopilot):
     '''Simple Autopilot that gives a fixed speed command using proportional control'''
@@ -98,10 +89,9 @@ class FixedSpeedAutopilot(Autopilot):
         init_mode = 'tracking speed'
         Autopilot.__init__(self, init_mode)
 
-    def _get_u_ref(self, t, x_f16):
+    def get_u_ref(self, t, x_f16):
         '''for the current discrete state, get the reference inputs signals'''
 
         x_dif = self.setpoint - x_f16[0]
 
         return 0, 0, 0, self.p_gain * x_dif
-

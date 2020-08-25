@@ -43,7 +43,7 @@ class GcasAutopilot(Autopilot):
         if self.stdout:
             print(s)
 
-    def advance_discrete_state(self, t, x_f16):
+    def advance_discrete_mode(self, t, x_f16):
         '''
         advance the discrete state based on the current aircraft state. Returns True iff the discrete state
         has changed.
@@ -106,7 +106,7 @@ class GcasAutopilot(Autopilot):
         # Evaluate boolean
         return (theta-alpha) - 2 * math.pi * radsFromNoseLevel > self.cfg_path_goal
 
-    def _get_u_ref(self, _t, x_f16):
+    def get_u_ref(self, _t, x_f16):
         '''get the reference input signals'''
 
         if self.mode == 'standby':

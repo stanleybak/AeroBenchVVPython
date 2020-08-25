@@ -11,21 +11,15 @@ from numpy import deg2rad
 
 from aerobench.lowlevel.subf16_model import subf16_model
 from aerobench.lowlevel.low_level_controller import LowLevelController
-from aerobench.highlevel.autopilot import Autopilot
 
-def controlled_f16(t, x_f16, autopilot, f16_model='morelli', v2_integrators=False):
+def controlled_f16(t, x_f16, u_ref, llc, f16_model='morelli', v2_integrators=False):
     'returns the LQR-controlled F-16 state derivatives and more'
 
     assert isinstance(x_f16, np.ndarray)
-    assert isinstance(autopilot, Autopilot), "autopilot type was {}".format(type(autopilot))
-    assert isinstance(autopilot.llc, LowLevelController)
+    assert isinstance(llc, LowLevelController)
+    assert u_ref.size == 4
 
     assert f16_model in ['stevens', 'morelli'], 'Unknown F16_model: {}'.format(f16_model)
-
-    llc = autopilot.llc
-
-    # Get Reference Control Vector (commanded Nz, ps, Ny + r, throttle)
-    u_ref = autopilot.get_u_ref(t, x_f16) # in g's & rads / sec
 
     x_ctrl, u_deg = llc.get_u_deg(u_ref, x_f16)
 
@@ -35,7 +29,7 @@ def controlled_f16(t, x_f16, autopilot, f16_model='morelli', v2_integrators=Fals
     if v2_integrators:
         # integrators from matlab v2 model
         ps = xd_model[6] * cos(xd_model[1]) + xd_model[8] * sin(xd_model[1])
-        
+
         Ny_r = Ny + xd_model[8]
     else:
         # Nonlinear (Actual): ps = p * cos(alpha) + r * sin(alpha)
@@ -51,13 +45,7 @@ def controlled_f16(t, x_f16, autopilot, f16_model='morelli', v2_integrators=Fals
     start = len(xd_model)
     end = start + llc.get_num_integrators()
     int_der = llc.get_integrator_derivatives(t, x_f16, u_ref, Nz, ps, Ny_r)
-
     xd[start:end] = int_der
-
-    # integrators from autopilot
-    start = end
-    end = start + autopilot.get_num_integrators()
-    xd[start:end] = autopilot.get_integrator_derivatives(t, x_f16, u_ref, x_ctrl, Nz, Ny)
 
     # Convert all degree values to radians for output
     u_rad = np.zeros((7,)) # throt, ele, ail, rud, Nz_ref, ps_ref, Ny_r_ref

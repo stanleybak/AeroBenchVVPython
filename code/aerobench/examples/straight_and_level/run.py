@@ -18,9 +18,9 @@ class StraightAndLevelAutopilot(Autopilot):
     def __init__(self, alt_setpoint):
         self.alt_setpoint = alt_setpoint
 
-        Autopilot.__init__(self)
+        Autopilot.__init__(self, 'init_mode')
 
-    def _get_u_ref(self, _t, x_f16):
+    def get_u_ref(self, _t, x_f16):
         '''get the reference inputs signals'''
 
         airspeed = x_f16[0]   # Vt            (ft/sec)

@@ -3,8 +3,6 @@ Stanley Bak
 Low-level flight controller
 '''
 
-from math import sin, cos
-
 import numpy as np
 from aerobench.util import Freezable
 
@@ -20,7 +18,7 @@ class CtrlLimits(Freezable):
         self.AileronMinDeg = -21.5
         self.RudderMaxDeg = 30
         self.RudderMinDeg = -30
-        self.MaxBankDeg = 60 # For turning maneuvers
+        
         self.NzMax = 6
         self.NzMin = -1
 
@@ -30,25 +28,30 @@ class LowLevelController(Freezable):
     '''low level flight controller
     '''
 
+    old_k_long = np.array([[-156.8801506723475, -31.037008068526642, -38.72983346216317]], dtype=float)
+    old_k_lat = np.array([[37.84483, -25.40956, -6.82876, -332.88343, -17.15997],
+                          [-23.91233, 5.69968, -21.63431, 64.49490, -88.36203]], dtype=float)
+
+    old_xequil = np.array([502.0, 0.0389, 0.0, 0.0, 0.0389, 0.0, 0.0, 0.0, \
+                        0.0, 0.0, 0.0, 1000.0, 9.0567], dtype=float).transpose()
+    old_uequil = np.array([0.1395, -0.7496, 0.0, 0.0], dtype=float).transpose()
+
     def __init__(self, gain_str='old'):
         # Hard coded LQR gain matrix from matlab version
 
         assert gain_str == 'old'
 
         # Longitudinal Gains
-        K_long = np.array([[-156.8801506723475, -31.037008068526642, -38.72983346216317]], dtype=float)
-
-        K_lat = np.array([[37.84483, -25.40956, -6.82876, -332.88343, -17.15997],
-                          [-23.91233, 5.69968, -21.63431, 64.49490, -88.36203]], dtype=float)
+        K_long = LowLevelController.old_k_long
+        K_lat = LowLevelController.old_k_lat
 
         self.K_lqr = np.zeros((3, 8))
         self.K_lqr[:1, :3] = K_long
         self.K_lqr[1:, 3:] = K_lat
 
         # equilibrium points from BuildLqrControllers.py
-        self.xequil = np.array([502.0, 0.0389, 0.0, 0.0, 0.0389, 0.0, 0.0, 0.0, \
-                        0.0, 0.0, 0.0, 1000.0, 9.0567], dtype=float).transpose()
-        self.uequil = np.array([0.1395, -0.7496, 0.0, 0.0], dtype=float).transpose()
+        self.xequil = LowLevelController.old_xequil
+        self.uequil = LowLevelController.old_uequil
 
         self.ctrlLimits = CtrlLimits()
 
