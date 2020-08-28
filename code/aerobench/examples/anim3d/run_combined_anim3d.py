@@ -34,7 +34,7 @@ def main():
     trail_pts_list = [None, np.inf]
     elev_list = [15, 27]
     azim_list = [-150, -107]
-    skip_list = [None, skip_override]
+    skip_list = [3, skip_override]
     chase_list = [False, True]
     fixed_floor_list = [False, True]
     init_extra_list = [None, init_extra]

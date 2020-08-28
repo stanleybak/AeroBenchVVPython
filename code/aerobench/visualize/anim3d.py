@@ -251,7 +251,7 @@ def make_anim(res, filename, viewsize=1000, viewsize_z=1000, f16_scale=30, trail
             rad2deg(phi), rad2deg(theta), rad2deg(psi)))
 
         s = f16_scale[index]
-        s = 30 if s is None else s
+        s = 25 if s is None else s
         pts = scale3d(f16_pts, [-s, s, s])
 
         pts = rotate3d(pts, theta, psi - math.pi/2, -phi)
@@ -329,14 +329,19 @@ def make_anim(res, filename, viewsize=1000, viewsize_z=1000, f16_scale=30, trail
 
     plt.tight_layout()
 
-    anim_obj = animation.FuncAnimation(fig, anim_func, frames, interval=30, \
+    interval = 30
+
+    if filename.endswith('.gif'):
+        interval = 50
+
+    anim_obj = animation.FuncAnimation(fig, anim_func, frames, interval=interval, \
         blit=False, repeat=True)
 
     if filename is not None:
 
         if filename.endswith('.gif'):
             print("\nSaving animation to '{}' using 'imagemagick'...".format(filename))
-            anim_obj.save(filename, dpi=80, writer='imagemagick')
+            anim_obj.save(filename, dpi=60, writer='imagemagick') # dpi was 80
             print("Finished saving to {} in {:.1f} sec".format(filename, time.time() - start))
         else:
             fps = 40

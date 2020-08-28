@@ -1,4 +1,4 @@
-﻿<p align="center"> <img src="gcas_py.gif"/> </p>
+﻿<p align="center"> <img src="anim3d.gif"/> </p>
 
 Note: This is the v2 branch of the code, which is now a python3 project and includes more modularity and general simulation capabilities. For the original benchmark paper version see the v1 branch.
 
