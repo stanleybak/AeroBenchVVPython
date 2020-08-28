@@ -11,3 +11,4 @@ TAGS
 *_flymake.py
 *.mypy_cache
 __pycache__
+*.pkl

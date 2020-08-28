@@ -17,7 +17,7 @@ class GcasAutopilot(Autopilot):
 
     def __init__(self, init_mode='standby', gain_str='old', stdout=False):
 
-        assert init_mode in ['standby', 'roll', 'pull']
+        assert init_mode in ['standby', 'roll', 'pull', 'waiting']
 
         # config
         self.cfg_eps_phi = deg2rad(5)       # Max abs roll angle before pull
@@ -32,6 +32,9 @@ class GcasAutopilot(Autopilot):
 
         self.pull_start_time = 0
         self.stdout = stdout
+
+        self.waiting_cmd = np.zeros(4)
+        self.waiting_time = 2
 
         llc = LowLevelController(gain_str=gain_str)
 
@@ -51,7 +54,11 @@ class GcasAutopilot(Autopilot):
 
         premode = self.mode
 
-        if self.mode == 'standby':
+        if self.mode == 'waiting':
+            # time-triggered start after two seconds
+            if t + 1e-6 >= self.waiting_time:
+                self.mode = 'roll'
+        elif self.mode == 'standby':
             if not self.is_nose_high_enough(x_f16) and not self.is_above_flight_deck(x_f16):
                 self.mode = 'roll'
         elif self.mode == 'roll':
@@ -59,7 +66,7 @@ class GcasAutopilot(Autopilot):
                 self.mode = 'pull'
                 self.pull_start_time = t
         else:
-            assert self.mode == 'pull'
+            assert self.mode == 'pull', f"unknown mode: {self.mode}"
 
             if self.is_nose_high_enough(x_f16) and t >= self.pull_start_time + self.cfg_min_pull_time:
                 self.mode = 'standby'
@@ -111,10 +118,12 @@ class GcasAutopilot(Autopilot):
 
         if self.mode == 'standby':
             rv = np.zeros(4)
+        elif self.mode == 'waiting':
+            rv = self.waiting_cmd
         elif self.mode == 'roll':
             rv = self.roll_wings_level(x_f16)
         else:
-            assert self.mode == 'pull'
+            assert self.mode == 'pull', f"unknown mode: {self.mode}"
             rv = self.pull_nose_level()
 
         return rv

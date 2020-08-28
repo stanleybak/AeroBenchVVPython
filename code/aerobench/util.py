@@ -13,9 +13,9 @@ class StateIndex:
     
     ALPHA = 1
     BETA = 2
-    PHI = 3
-    THETA = 4
-    PSI = 5
+    PHI = 3 # roll angle
+    THETA = 4 # pitch angle
+    PSI = 5 # yaw angle
     
     P = 6
     Q = 7

@@ -46,13 +46,15 @@ class WaypointAutopilot(Autopilot):
         self.cfg_max_bank_deg = 65 # maximum bank angle setpoint
         # v2 was 0.5, 0.9
 
-        # Gains for Nz
+        # Ranges for Nz
         self.cfg_max_nz_cmd = 4
         self.cfg_min_nz_cmd = -1
 
+        self.done_time = 0.0
+
         llc = LowLevelController(gain_str=gain_str)
 
-        Autopilot.__init__(self, 'tracking_waypoint_0', llc=llc)
+        Autopilot.__init__(self, 'Waypoint 1', llc=llc)
 
     def log(self, s):
         'print to terminal if stdout is true'
@@ -63,7 +65,7 @@ class WaypointAutopilot(Autopilot):
     def get_u_ref(self, _t, x_f16):
         '''get the reference input signals'''
 
-        if not self.is_finished():
+        if self.mode != "Done":
             psi_cmd = self.get_waypoint_data(x_f16)[0]
 
             # Get desired roll angle given desired heading
@@ -177,10 +179,12 @@ class WaypointAutopilot(Autopilot):
 
         return nz
 
-    def is_finished(self):
+    def is_finished(self, t, x_f16):
         'is the maneuver done?'
 
-        return self.waypoint_index >= len(self.waypoints)
+        rv = self.waypoint_index >= len(self.waypoints) and self.done_time + 5.0 < t
+
+        return rv
 
     def advance_discrete_mode(self, t, x_f16):
         '''
@@ -194,17 +198,20 @@ class WaypointAutopilot(Autopilot):
             if slant_range < self.cfg_slant_range_threshold:
                 self.waypoint_index += 1
 
+                if self.waypoint_index >= len(self.waypoints):
+                    self.done_time = t
+
         premode = self.mode
 
         if self.waypoint_index >= len(self.waypoints):
-            self.mode = 'done'
+            self.mode = 'Done'
         else:
-            self.mode = f'tracking_waypoint_{self.waypoint_index}'
+            self.mode = f'Waypoint {self.waypoint_index + 1}'
 
         rv = premode != self.mode
 
         if rv:
-            self.log(f"GCAS transition {premode} -> {self.mode} at time {t}")
+            self.log(f"Waypoint transition {premode} -> {self.mode} at time {t}")
 
         return rv
 

@@ -42,7 +42,7 @@ class Autopilot(Freezable):
 
         return False
 
-    def is_finished(self):
+    def is_finished(self, t, x_f16):
         '''
         returns True if the simulation should stop (for example, after maneuver completes)
 

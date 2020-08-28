@@ -2,11 +2,14 @@
 Stanley Bak
 
 AcasXu f16 sim
+
+This script makes the state history plots (attitude, inner loop contols, ect) for a single simulation.
 '''
 
 import math
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 from aerobench.run_f16_sim import run_f16_sim
 from aerobench.util import StateIndex, extract_single_result
@@ -35,7 +38,7 @@ def ownship_initial_state(llc):
     # use trim state
     init = list(llc.xequil)
 
-    init[StateIndex.POSE] = 500
+    init[StateIndex.VT] = 807
 
     init += [0] * llc.get_num_integrators()
 
@@ -46,46 +49,53 @@ def main():
 
     tmax = 20 # simulation time
 
-    llc = LowLevelController()
-    ap = AcasXuAutopilot(llc=llc)
-
     step = 1/30
     extended_states = True
 
+    llc = LowLevelController()
+        
     init = intruder_initial_state(llc)
     init += ownship_initial_state(llc)
 
-    res = run_f16_sim(init, tmax, ap, step=step, extended_states=extended_states)
+    ap = AcasXuAutopilot(init, llc)
 
-    print(f"Simulation Completed in {round(res['runtime'], 2)} seconds (extended_states={extended_states})")
+    res = run_f16_sim(init, tmax, ap, step=step, extended_states=extended_states)
+    t = res['runtime']
+    print(f"Sim Completed in {round(t, 2)} seconds (extended_states={extended_states})")
+
+    plot_states(res, ap)
+
+def plot_states(res, ap):
+    'make traditional plots'
 
     plot.plot_overhead(res, llc=ap.llc)
     filename = 'overhead.png'
     plt.savefig(filename)
     print(f"Made {filename}")
+    labels = ['intruder', 'ownship']
 
-    for i in range(2):
-        res_single = extract_single_result(res, i, llc)
+    for i, l in enumerate(labels):
+        res_single = extract_single_result(res, i, ap.llc)
 
         plot.plot_single(res_single, 'alt', title='Altitude (ft)')
-        filename = f'alt_{i}.png'
+        filename = f'alt_{l}.png'
         plt.savefig(filename)
         print(f"Made {filename}")
 
         plot.plot_attitude(res_single)
-        filename = f'attitude{i}.png'
+        filename = f'attitude_{l}.png'
         plt.savefig(filename)
         print(f"Made {filename}")
 
         # plot inner loop controls + references
         plot.plot_inner_loop(res_single)
-        filename = f'inner_loop_{i}.png'
+        filename = f'inner_loop_{l}.png'
         plt.savefig(filename)
         print(f"Made {filename}")
 
         # plot outer loop controls + references
         plot.plot_outer_loop(res_single)
-        filename = f'outer_loop_{i}.png'
+        filename = f'outer_loop_{l}.png'
         plt.savefig(filename)
         print(f"Made {filename}")
 

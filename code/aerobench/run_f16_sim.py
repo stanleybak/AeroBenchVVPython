@@ -54,11 +54,14 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False, model
     times = [0]
     states = [x0]
 
+    # mode can change at time 0
+    ap.advance_discrete_mode(times[-1], states[-1])
+
     modes = [ap.mode]
 
     if extended_states:
         xd, u, Nz, ps, Ny_r = get_extended_states(ap, times[-1], states[-1], model_str, v2_integrators)
-        
+
         xd_list = [xd]
         u_list = [u]
         Nz_list = [Nz]
@@ -105,7 +108,7 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False, model
                     ps_list.append(ps)
                     Ny_r_list.append(Ny_r)
 
-                if ap.is_finished():
+                if ap.is_finished(times[-1], states[-1]):
                     # this both causes the outer loop to exit and sets res['status'] appropriately
                     integrator.status = 'autopilot finished'
                     break
