@@ -25,7 +25,7 @@ def main():
 
     res_gcas = simulate_gcas()
 
-    res_waypoint, init_extra, update_extra, skip_override, _waypoints = simulate_waypoint(filename)
+    res_waypoint, init_extra, update_extra, skip_waypoint, _waypoints = simulate_waypoint(filename)
 
     res_list = [res_gcas, res_waypoint]
     scale_list = [None, 70]
@@ -34,7 +34,10 @@ def main():
     trail_pts_list = [None, np.inf]
     elev_list = [15, 27]
     azim_list = [-150, -107]
-    skip_list = [3, skip_override]
+
+    skip_gcas = 3 if filename.endswith('.gif') else None
+    
+    skip_list = [skip_gcas, skip_waypoint]
     chase_list = [False, True]
     fixed_floor_list = [False, True]
     init_extra_list = [None, init_extra]
