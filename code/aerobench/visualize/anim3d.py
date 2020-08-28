@@ -332,7 +332,7 @@ def make_anim(res, filename, viewsize=1000, viewsize_z=1000, f16_scale=30, trail
     interval = 30
 
     if filename.endswith('.gif'):
-        interval = 50
+        interval = 60
 
     anim_obj = animation.FuncAnimation(fig, anim_func, frames, interval=interval, \
         blit=False, repeat=True)
