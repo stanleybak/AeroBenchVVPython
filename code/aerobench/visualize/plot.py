@@ -6,25 +6,17 @@ Python code for F-16 animation video output
 import math
 import os
 
-import numpy as np
-from numpy import rad2deg
-
 import matplotlib
-import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 
-from aerobench.util import get_state_names, StateIndex
-
-def get_script_path(filename=__file__):
-    '''get the path this script'''
-    return os.path.dirname(os.path.realpath(filename))
+from aerobench.util import get_state_names, StateIndex, get_script_path
 
 def init_plot():
     'initialize plotting style'
 
     matplotlib.use('TkAgg') # set backend
 
-    parent = get_script_path()
+    parent = get_script_path(__file__)
     p = os.path.join(parent, 'bak_matplotlib.mlpstyle')
 
     plt.style.use(['bmh', p])
@@ -50,6 +42,8 @@ def plot_overhead(run_sim_result, waypoints=None, llc=None):
     else:
         num_vars = full_states[0, :].size
         num_aircraft = 1
+
+    print(f"num_aircraft = {num_aircraft}")
 
     for i in range(num_aircraft):
         states = full_states[:, i*num_vars:(i+1)*num_vars]

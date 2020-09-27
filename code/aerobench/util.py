@@ -2,7 +2,9 @@
 Utilities for F-16 GCAS
 '''
 
+import os
 from math import floor, ceil
+
 import numpy as np
 
 class StateIndex:
@@ -228,3 +230,11 @@ def extract_single_result(res, index, llc):
                 rv[key] = [tup[index] for tup in res[key]]
 
     return rv
+
+def get_script_path(script_filename):
+    '''get the path this script
+
+    Pass __file__ as the argument
+    '''
+    
+    return os.path.dirname(os.path.realpath(script_filename))

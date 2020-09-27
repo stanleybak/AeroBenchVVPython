@@ -55,6 +55,8 @@ class LowLevelController(Freezable):
 
         self.ctrlLimits = CtrlLimits()
 
+        self.model_str = 'morelli'
+
         self.freeze_attrs()
 
     def get_u_deg(self, u_ref, f16_state):

@@ -4,8 +4,6 @@ Stanley Bak
 should match 'u_turn' scenario from matlab version
 '''
 
-import math
-
 from numpy import deg2rad
 import matplotlib.pyplot as plt
 

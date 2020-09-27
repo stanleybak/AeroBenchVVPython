@@ -11,7 +11,7 @@ from scipy.integrate import RK45
 from aerobench.highlevel.controlled_f16 import controlled_f16
 from aerobench.util import get_state_names, Euler
 
-def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False, model_str='morelli',
+def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False,
                 integrator_str='rk45', v2_integrators=False):
     '''Simulates and analyzes autonomous F-16 maneuvers
 
@@ -36,6 +36,7 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False, model
 
     start = time.perf_counter()
 
+    model_str = ap.llc.model_str
     initial_state = np.array(initial_state, dtype=float)
     llc = ap.llc
 

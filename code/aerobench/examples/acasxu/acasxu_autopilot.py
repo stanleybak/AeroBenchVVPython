@@ -3,6 +3,7 @@
 ported from matlab v2
 '''
 
+import os
 from math import pi, atan2, sqrt, sin, cos, asin
 
 import numpy as np
@@ -10,25 +11,36 @@ import numpy as np
 import onnxruntime as ort
 
 from aerobench.highlevel.autopilot import Autopilot
-from aerobench.util import StateIndex
+from aerobench.util import StateIndex, get_state_names, get_script_path
 
 class AcasXuAutopilot(Autopilot):
     '''AcasXu autopilot'''
 
-    def __init__(self, init, llc):
+    def __init__(self, init, llc, num_aircraft_acasxu=1, stop_on_coc=False):
         'waypoints is a list of 3-tuples'
 
         init = np.array(init, dtype=float)
 
         self.nets = load_networks()
-        
-        self.intruder_waypoint = make_intruder_setpoint(init)
 
-        num_vars = init.size // 2
-        self.intruder_airspeed = init[StateIndex.VEL]
-        self.ownship_airspeed = init[num_vars + StateIndex.VEL]
+        self.stop_on_coc = stop_on_coc
+        self.coc_time = None
+        self.coc_stop_delay = 10
 
-        # default control when not waypoint tracking
+        self.num_vars = len(get_state_names()) + llc.get_num_integrators()
+        assert init.size % self.num_vars == 0
+        self.num_aircraft = init.size // self.num_vars
+        self.num_aircraft_acasxu = num_aircraft_acasxu
+
+        # waypoints for all airfract
+        self.intruder_waypoints = make_intruder_waypoints(init, self.num_vars)
+
+        self.init_airspeed = []
+
+        for a in range(self.num_aircraft):
+            self.init_airspeed.append(init[self.num_vars * a + StateIndex.VEL])
+
+        # default control when not running acasxu
         self.cfg_u_ol_default = (0, 0, 0, 0.3)
 
         # control config
@@ -55,13 +67,51 @@ class AcasXuAutopilot(Autopilot):
 
         self.nn_update_rate = 2.0
         self.next_nn_update = 0
-        self.command = 0 # current ownship command
+
+
+        # current ownship commands
+        self.commands = [0] * self.num_aircraft_acasxu 
+
+        # list with one entry for each acasxu aircraft
+        # each list entry is a list with one element for every other aircraft (and 0 for self),
+        # which is the last acasxu command for that aircraft
+        self.all_acasxu_commands = []
+
+        for _ in range(self.num_aircraft_acasxu):
+            self.all_acasxu_commands.append([0] * self.num_aircraft)
+
+        # closest intruder with no clear of conflict command
+        self.closest_intruder_indices = [None] * self.num_aircraft_acasxu
 
         self.labels = ['clear', 'weak-left', 'weak-right', 'strong-left', 'strong-right']
 
         self.history = [] # list of 2-tuples: (command, ownship_state)
+
+        # list of 3-tuples: (time, all_acasxu_commands, closest_intruder_indices)
+        self.full_history = []
+
+        mode = "/".join([self.labels[c] for c in self.commands])
         
-        Autopilot.__init__(self, self.labels[self.command], llc=llc)
+        Autopilot.__init__(self, mode, llc=llc)
+
+    def is_finished(self, t, x_f16):
+        'is the maneuver done?'
+
+        rv = False
+
+        if self.stop_on_coc:
+            if t > 0:
+                all_coc = all([c == 0 for c in self.commands])
+
+                if all_coc:
+                    if self.coc_time is None:
+                        self.coc_time = t
+
+                    rv = self.coc_time + self.coc_stop_delay < t
+                else:
+                    self.coc_time = None
+
+        return rv
 
     def advance_discrete_mode(self, t, x_f16):
         '''
@@ -76,25 +126,75 @@ class AcasXuAutopilot(Autopilot):
         if t + tol > self.next_nn_update:
             self.next_nn_update = t + self.nn_update_rate
 
-            num_vars = x_f16.size // 2
-            intruder_state = x_f16[:num_vars]
-            ownship_state = x_f16[num_vars:]
-        
-            self.update_nn_command(t, ownship_state, intruder_state)
-            self.mode = self.labels[self.command]
+            #print("--------------------")
 
-            #print(f"{t}: {self.mode}")
-            self.history.append((self.command, ownship_state))
+            for a in range(self.num_aircraft_acasxu):
+                ownship_state = x_f16[a*self.num_vars:(a+1)*self.num_vars]
 
+                x1 = ownship_state[StateIndex.POS_E]
+                y1 = ownship_state[StateIndex.POS_N]
+
+                stdout = False #a in [0, 5]
+
+                if stdout:
+                    print(f"\nUpdating plane {a} at time {t}. State is {x1, y1}")
+
+                self.commands[a] = 0 # set command to clear of conflict
+                closest_intruder_state = None
+                closest_dist_sq = np.inf
+                closest_intruder_index = None
+
+                # intruder is the closest aircraft in the x/y space
+                for b in range(self.num_aircraft):
+                    if a == b:
+                        continue
+
+                    intruder_state = x_f16[b*self.num_vars:(b+1)*self.num_vars]
+
+                    # this updates self.all_acasxu_commands[a][b]
+                    self.update_nn_command(t, a, ownship_state, b, intruder_state, stdout=stdout)
+                    c = self.all_acasxu_commands[a][b]
+
+                    # run acas xu on the intruder
+
+                    x2 = intruder_state[StateIndex.POS_E]
+                    y2 = intruder_state[StateIndex.POS_N]
+
+                    dist_sq = (x1-x2)**2 + (y1-y2)**2
+
+                    if stdout:
+                        print(f"b={b}. State is {x2, y2}, distSq is {dist_sq}")
+
+                    if dist_sq < closest_dist_sq and c != 0:
+                        closest_intruder_state = intruder_state
+                        closest_dist_sq = dist_sq
+                        closest_intruder_index = b
+                        self.commands[a] = c
+
+                if stdout:
+                    print(f"closest intruder index: {closest_intruder_index}")
+                    print(f"command issued: {self.labels[self.commands[a]]} ({self.commands[a]})")
+
+                self.history.append((self.commands[a], ownship_state))
+                self.closest_intruder_indices[a] = closest_intruder_index
+
+            tup = (t, np.array(self.all_acasxu_commands), np.array(self.closest_intruder_indices))
+            self.full_history.append(tup)
+
+        self.mode = "/".join([self.labels[c] for c in self.commands])
         rv = premode != self.mode
 
-        #if rv:
-        #    print(f"transition {premode} -> {self.mode} at time {t}")
+        if rv:
+            print(f"transition {premode} -> {self.mode} at time {t}")
 
         return rv
 
-    def update_nn_command(self, t, ownship_state, intruder_state):
-        'update self.command based on the neural network output at the current state'
+    def update_nn_command(self, t, ownship_index, ownship_state, intruder_index, intruder_state, stdout=False):
+        '''
+        updates self.all_acasxu_commands[ownship_index][intruder_index]
+
+        based on the neural network output at the current state
+        '''
 
         x1 = ownship_state[StateIndex.POS_E]
         y1 = ownship_state[StateIndex.POS_N]
@@ -137,40 +237,47 @@ class AcasXuAutopilot(Autopilot):
         # min inputs: 0, -3.1415, -3.1415, 100, 0
         # max inputs: 60760, 3.1415, 3,1415, 1200, 1200
 
-        stdout = False #self.time < 0.5
+        #self.time < 0.5
 
         if stdout:
-            print(f"\nstate at time {t}, x1: {x1}, y1: {y1}, " + \
+            print(f"State at time {t}, x1: {x1}, y1: {y1}, " + \
               f"heading1: {heading1}, x2: {x2}, y2: {y2}, heading2: {heading2}")
 
             print(f"input (before scaling): rho: {rho}, theta: {theta}, psi: {psi}, v_own: {v_own}, v_int: {v_int}")
 
         if rho > 60760:
-            self.command = 0
+            self.all_acasxu_commands[ownship_index][intruder_index] = 0
         else:
-            last_command = self.command
+            last_command = self.all_acasxu_commands[ownship_index][intruder_index]
 
             net = self.nets[last_command]
 
             state = [rho, theta, psi, v_own, v_int]
 
             res = scale_and_run_network(net, state, stdout)
-            self.command = np.argmin(res)
+            c = np.argmin(res)
+            self.all_acasxu_commands[ownship_index][intruder_index] = c
 
             if stdout:
-                print(f"Unscaled network output ({self.labels[self.command]}): {res}")
+                print(f"Unscaled network output ({self.labels[c]}): {res}")
 
     def get_u_ref(self, t, x_f16):
         '''get the reference input signals'''
 
-        num_vars = x_f16.size // 2
-        intruder_state = x_f16[:num_vars]
-        ownship_state = x_f16[num_vars:]
+        rv = []
+        start = 0
 
-        u_ref_intruder = self.get_u_ref_intruder(intruder_state)
-        u_ref_ownship = self.get_u_ref_ownship(ownship_state)
+        for a in range(self.num_aircraft):
+            end = start + self.num_vars
+            state = x_f16[start:end]
+            start += self.num_vars
+            
+            if a < self.num_aircraft_acasxu:
+                rv += self.get_u_ref_ownship(state, a)
+            else:
+                rv += self.get_u_ref_intruder(state, a)
 
-        return u_ref_intruder + u_ref_ownship
+        return rv
 
     def track_altitude(self, x_f16, h_cmd):
         'get nz to track altitude, taking turning into account'
@@ -254,11 +361,11 @@ class AcasXuAutopilot(Autopilot):
 
         return nz
 
-    def get_u_ref_ownship(self, x_f16):
+    def get_u_ref_ownship(self, x_f16, index):
         '''get the reference input for ownship'''
 
         roll_rate_cmd_list = [0, -1.5, 1.5, -3.0, 3.0] # deg / sec
-        roll_rate_cmd_deg = roll_rate_cmd_list[self.command]
+        roll_rate_cmd_deg = roll_rate_cmd_list[self.commands[index]]
 
         # these bank angle cmds were empirically found to achieve the desired turn rate
         if roll_rate_cmd_deg == 0:
@@ -280,9 +387,9 @@ class AcasXuAutopilot(Autopilot):
 
         ps_cmd = self.track_roll_angle(x_f16, phi_cmd)
 
-        alt = self.intruder_waypoint[2]
+        alt = self.intruder_waypoints[index][2]
         nz_cmd = self.track_altitude(x_f16, alt)
-        throttle = self.track_airspeed(x_f16, self.ownship_airspeed)
+        throttle = self.track_airspeed(x_f16, self.init_airspeed[index])
 
         # trim to limits
         nz_cmd = max(self.cfg_min_nz_cmd, min(self.cfg_max_nz_cmd, nz_cmd))
@@ -290,22 +397,22 @@ class AcasXuAutopilot(Autopilot):
 
         return [nz_cmd, ps_cmd, 0, throttle]
 
-    def get_u_ref_intruder(self, x_f16):
+    def get_u_ref_intruder(self, x_f16, index):
         '''get the reference input for intruder
 
         intruder always moves towards self.intruder_waypoint
         '''
 
-        psi_cmd = get_waypoint_data(x_f16, self.intruder_waypoint)[0]
+        psi_cmd = get_waypoint_data(x_f16, self.intruder_waypoints[index])[0]
 
-        alt = self.intruder_waypoint[2]
-        
+        alt = self.intruder_waypoints[index][2]
+
         # Get desired roll angle given desired heading
         phi_cmd = self.get_phi_to_track_heading(x_f16, psi_cmd)
         ps_cmd = self.track_roll_angle(x_f16, phi_cmd)
 
         nz_cmd = self.track_altitude(x_f16, alt)
-        throttle = self.track_airspeed(x_f16, self.intruder_airspeed)
+        throttle = self.track_airspeed(x_f16, self.init_airspeed[index])
 
         # trim to limits
         nz_cmd = max(self.cfg_min_nz_cmd, min(self.cfg_max_nz_cmd, nz_cmd))
@@ -399,24 +506,36 @@ def cart2sph(pt3d):
 
     return az, elev, r
 
-def make_intruder_setpoint(init, hypot=25000):
-    '''make the intruder setpoint 3-tuple
+def make_intruder_waypoints(init, num_vars, hypot=25000):
+    '''make the intruder waypoints (list of 3-tuples)
 
-    intruder just flies straight
+    assumes intruder just flies straight
     '''
 
-    alt = init[StateIndex.ALT]
-    x = init[StateIndex.POS_E]
-    y = init[StateIndex.POS_N]
+    rv = []
 
-    psi = init[StateIndex.PSI]
+    start = 0
 
-    rad = -psi + pi/2
+    while start < init.size:
+        end = start + num_vars
+        state = init[start:end]
+        start += num_vars
 
-    new_x = x + hypot * cos(rad)
-    new_y = y + hypot * sin(rad)
+        alt = state[StateIndex.ALT]
+        x = state[StateIndex.POS_E]
+        y = state[StateIndex.POS_N]
 
-    return (new_x, new_y, alt)
+        psi = state[StateIndex.PSI]
+
+        rad = -psi + pi/2
+
+        new_x = x + hypot * cos(rad)
+        new_y = y + hypot * sin(rad)
+
+        wp = (new_x, new_y, alt)
+        rv.append(wp)
+
+    return rv
 
 def predict_with_onnxruntime(sess, input_tensor):
     'run with onnx network with single input and single output'
@@ -454,7 +573,8 @@ def load_networks():
     nets = []
 
     for net in range(1, 6):
-        filename = f"nn/ACASXU_run2a_{net}_1_batch_2000.onnx"
+        dir_name = get_script_path(__file__)
+        filename = os.path.join(dir_name, "nn", f"ACASXU_run2a_{net}_1_batch_2000.onnx")
 
         #model = onnx.load(filename)
         #onnx.checker.check_model(model)

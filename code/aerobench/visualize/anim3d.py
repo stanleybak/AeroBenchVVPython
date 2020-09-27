@@ -21,11 +21,7 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 
 from aerobench.visualize import plot
-from aerobench.util import StateIndex
-
-def get_script_path(filename=__file__):
-    '''get the path this script'''
-    return os.path.dirname(os.path.realpath(filename))
+from aerobench.util import StateIndex, get_script_path
 
 def make_anim(res, filename, viewsize=1000, viewsize_z=1000, f16_scale=30, trail_pts=60,
               elev=30, azim=45, skip_frames=None, chase=False, fixed_floor=False,
@@ -129,7 +125,7 @@ def make_anim(res, filename, viewsize=1000, viewsize_z=1000, f16_scale=30, trail
 
     ##
 
-    parent = get_script_path()
+    parent = get_script_path(__file__)
     plane_point_data = os.path.join(parent, 'f-16.mat')
 
     data = loadmat(plane_point_data)
@@ -331,7 +327,7 @@ def make_anim(res, filename, viewsize=1000, viewsize_z=1000, f16_scale=30, trail
 
     interval = 30
 
-    if filename.endswith('.gif'):
+    if filename is not None and filename.endswith('.gif'):
         interval = 60
 
     anim_obj = animation.FuncAnimation(fig, anim_func, frames, interval=interval, \
