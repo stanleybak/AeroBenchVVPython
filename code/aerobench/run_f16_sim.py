@@ -9,10 +9,10 @@ import numpy as np
 from scipy.integrate import RK45
 
 from aerobench.highlevel.controlled_f16 import controlled_f16
-from aerobench.util import get_state_names, Euler
+from aerobench.util import get_state_names, Euler, StateIndex, print_state
 
 def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False,
-                integrator_str='rk45', v2_integrators=False):
+                integrator_str='rk45', v2_integrators=False, print_errors=True):
     '''Simulates and analyzes autonomous F-16 maneuvers
 
     if multiple aircraft are to be simulated at the same time,
@@ -82,44 +82,50 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False,
     # note: fixed_step argument is unused by rk45, used with euler
     integrator = integrator_class(der_func, times[-1], states[-1], tmax, **kwargs)
 
-    while integrator.status == 'running':
-        integrator.step()
+    try:
 
-        if integrator.t >= times[-1] + step:
-            dense_output = integrator.dense_output()
+        while integrator.status == 'running':
+            integrator.step()
 
-            while integrator.t >= times[-1] + step:
-                t = times[-1] + step
-                #print(f"{round(t, 2)} / {tmax}")
+            if integrator.t >= times[-1] + step:
+                dense_output = integrator.dense_output()
 
-                times.append(t)
-                states.append(dense_output(t))
+                while integrator.t >= times[-1] + step:
+                    t = times[-1] + step
+                    #print(f"{round(t, 2)} / {tmax}")
 
-                updated = ap.advance_discrete_mode(times[-1], states[-1])
-                modes.append(ap.mode)
+                    times.append(t)
+                    states.append(dense_output(t))
 
-                # re-run dynamics function at current state to get non-state variables
-                if extended_states:
-                    xd, u, Nz, ps, Ny_r = get_extended_states(ap, times[-1], states[-1], model_str, v2_integrators)
+                    updated = ap.advance_discrete_mode(times[-1], states[-1])
+                    modes.append(ap.mode)
 
-                    xd_list.append(xd)
-                    u_list.append(u)
+                    # re-run dynamics function at current state to get non-state variables
+                    if extended_states:
+                        xd, u, Nz, ps, Ny_r = get_extended_states(ap, times[-1], states[-1], model_str, v2_integrators)
 
-                    Nz_list.append(Nz)
-                    ps_list.append(ps)
-                    Ny_r_list.append(Ny_r)
+                        xd_list.append(xd)
+                        u_list.append(u)
 
-                if ap.is_finished(times[-1], states[-1]):
-                    # this both causes the outer loop to exit and sets res['status'] appropriately
-                    integrator.status = 'autopilot finished'
-                    break
+                        Nz_list.append(Nz)
+                        ps_list.append(ps)
+                        Ny_r_list.append(Ny_r)
 
-                if updated:
-                    # re-initialize the integration class on discrete mode switches
-                    integrator = integrator_class(der_func, times[-1], states[-1], tmax, **kwargs)
-                    break
+                    if ap.is_finished(times[-1], states[-1]):
+                        # this both causes the outer loop to exit and sets res['status'] appropriately
+                        integrator.status = 'autopilot finished'
+                        break
 
-    assert 'finished' in integrator.status
+                    if updated:
+                        # re-initialize the integration class on discrete mode switches
+                        integrator = integrator_class(der_func, times[-1], states[-1], tmax, **kwargs)
+                        break
+    except SimModelError as e:
+        if print_errors:
+            print(f"Simulation Outside of Model: {e}")
+
+    if not 'finished' in integrator.status and print_errors:
+        print(f'Warning: integrator status was "{integrator.status}"')
 
     res = {}
     res['status'] = integrator.status
@@ -138,6 +144,9 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False,
 
     return res
 
+class SimModelError(RuntimeError):
+    'simulation state went outside of what the model is capable of simulating'
+
 def make_der_func(ap, model_str, v2_integrators):
     'make the combined derivative function for integration'
 
@@ -154,6 +163,20 @@ def make_der_func(ap, model_str, v2_integrators):
 
         for i in range(num_aircraft):
             state = full_state[num_vars*i:num_vars*(i+1)]
+
+            alpha = state[StateIndex.ALPHA]
+            if not -2 < alpha < 2:
+                raise SimModelError(f"alpha ({alpha}) out of bounds")
+
+            vel = state[StateIndex.VEL]
+            # even going lower than 300 is probably not a good idea
+            if not 200 <= vel <= 3000:
+                raise SimModelError(f"velocity ({vel}) out of bounds")
+
+            alt = state[StateIndex.ALT]
+            if not -10000 < alt < 100000:
+                raise SimModelError(f"altitude ({alt}) out of bounds")
+
             u_ref = u_refs[4*i:4*(i+1)]
 
             xd = controlled_f16(t, state, u_ref, ap.llc, model_str, v2_integrators)[0]
@@ -162,7 +185,7 @@ def make_der_func(ap, model_str, v2_integrators):
         rv = np.hstack(xds)
 
         return rv
-    
+
     return der_func
 
 def get_extended_states(ap, t, full_state, model_str, v2_integrators):

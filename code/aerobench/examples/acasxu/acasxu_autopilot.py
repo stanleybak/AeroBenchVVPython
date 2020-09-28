@@ -90,6 +90,8 @@ class AcasXuAutopilot(Autopilot):
         # list of 3-tuples: (time, all_acasxu_commands, closest_intruder_indices)
         self.full_history = []
 
+        self.stdout = True
+
         mode = "/".join([self.labels[c] for c in self.commands])
         
         Autopilot.__init__(self, mode, llc=llc)
@@ -184,7 +186,7 @@ class AcasXuAutopilot(Autopilot):
         self.mode = "/".join([self.labels[c] for c in self.commands])
         rv = premode != self.mode
 
-        if rv:
+        if rv and self.stdout:
             print(f"transition {premode} -> {self.mode} at time {t}")
 
         return rv
@@ -506,7 +508,7 @@ def cart2sph(pt3d):
 
     return az, elev, r
 
-def make_intruder_waypoints(init, num_vars, hypot=25000):
+def make_intruder_waypoints(init, num_vars, hypot=250000):
     '''make the intruder waypoints (list of 3-tuples)
 
     assumes intruder just flies straight

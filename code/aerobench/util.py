@@ -34,6 +34,12 @@ class StateIndex:
     
     POW = 12
 
+def print_state(state):
+    'print the state to stdout'
+
+    for l, s in zip(get_state_names(), state):
+        print(f"{l}: {s}")
+
 class Freezable():
     'a class where you can freeze the fields (prevent new fields from being created)'
 

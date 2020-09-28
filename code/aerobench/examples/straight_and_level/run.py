@@ -9,14 +9,16 @@ import matplotlib.pyplot as plt
 
 from aerobench.run_f16_sim import run_f16_sim
 from aerobench.highlevel.autopilot import Autopilot
+from aerobench.util import StateIndex
 
 from aerobench.visualize import plot
 
 class StraightAndLevelAutopilot(Autopilot):
     '''Simple Autopilot with proportional control'''
 
-    def __init__(self, alt_setpoint):
-        self.alt_setpoint = alt_setpoint
+    def __init__(self, init):
+        self.alt_setpoint = init[StateIndex.ALT]
+        self.vel_setpoint = init[StateIndex.VEL]
 
         Autopilot.__init__(self, 'init_mode')
 
@@ -30,17 +32,19 @@ class StraightAndLevelAutopilot(Autopilot):
         h = x_f16[11]         # Altitude      (feet)
 
         # Proportional Control
-        k_alt = 0.025
+        k_alt = 0.01
         h_error = self.alt_setpoint - h
         Nz = k_alt * h_error # Allows stacking of cmds
 
         # (Psuedo) Derivative control using path angle
-        k_gamma = 25
+        k_gamma = 15
         Nz = Nz - k_gamma*gamma
 
-        # try to maintain a fixed airspeed near trim point
-        K_vt = 0.25
-        throttle = -K_vt * (airspeed - self.xequil[0])
+        # try to maintain a fixed airspeed near start point
+        K_vt = 0.5
+        throttle = -K_vt * (airspeed - self.vel_setpoint)
+
+        Nz = min(max(-1, Nz), 6)
 
         return Nz, 0, 0, throttle
 
@@ -56,7 +60,7 @@ def main():
 
     # Initial Attitude
     alt = 3600        # altitude (ft)
-    vt = 500          # initial velocity (ft/sec)
+    vt = 550          # initial velocity (ft/sec)
     phi = 0           # Roll angle from wings level (rad)
     theta = 0.03         # Pitch angle from nose level (rad)
     psi = 0       # Yaw angle from North (rad)
@@ -64,9 +68,9 @@ def main():
     # Build Initial Condition Vectors
     # state = [vt, alpha, beta, phi, theta, psi, P, Q, R, pn, pe, h, pow]
     init = [vt, alpha, beta, phi, theta, psi, 0, 0, 0, 0, 0, alt, power]
-    tmax = 25 # simulation time
+    tmax = 50 # simulation time
     
-    ap = StraightAndLevelAutopilot(alt)
+    ap = StraightAndLevelAutopilot(init)
 
     res = run_f16_sim(init, tmax, ap)
 
@@ -79,6 +83,11 @@ def main():
     
     plot.plot_single(res, 'alt', title='Altitude (ft)')
     filename = 'alt.png'
+    plt.savefig(filename)
+    print(f"Made {filename}")
+
+    plot.plot_single(res, 'vt', title='Velocity (ft/sec)')
+    filename = 'vel.png'
     plt.savefig(filename)
     print(f"Made {filename}")
 
