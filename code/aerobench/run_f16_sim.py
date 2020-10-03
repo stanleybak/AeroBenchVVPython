@@ -20,11 +20,13 @@ class F16SimState(Freezable):
     '''
 
     def __init__(self, initial_state, ap, step=1/30, extended_states=False,
-                integrator_str='rk45', v2_integrators=False, print_errors=True):
+                integrator_str='rk45', v2_integrators=False, print_errors=True, keep_intermediate_states=True):
 
         self.model_str = model_str = ap.llc.model_str
         self.v2_integrators = v2_integrators
         initial_state = np.array(initial_state, dtype=float)
+
+        self.keep_intermediate_states = keep_intermediate_states
 
         self.step = step
         self.ap = ap
@@ -102,12 +104,25 @@ class F16SimState(Freezable):
         assert integrator.status == 'running', f"integrator status was {integrator.status} in call to simulate_to()"
 
         while True:
+            if not self.keep_intermediate_states and len(times) > 1:
+                # drop all except last state
+                times = [times[-1]]
+                states = [states[-1]]
+                modes = [modes[-1]]
+
+                if self.extended_states:
+                    self.xd_list = [self.xd_list[-1]]
+                    self.u_list = [self.u_list[-1]]
+                    self.Nz_list = [self.Nz_list[-1]]
+                    self.ps_list = [self.ps_list[-1]]
+                    self.Ny_r_list = [self.Ny_r_list[-1]]
+                    
             next_step_time = times[-1] + step
 
             if abs(times[-1] - tmax) > tol and next_step_time > tmax:
                 # use a small last step
                 next_step_time = tmax
-            
+
             if next_step_time >= tmax + tol:
                 # don't do any more steps
                 break
