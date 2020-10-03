@@ -73,7 +73,7 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False,
 
     if integrator_str == 'rk45':
         integrator_class = RK45
-        kwargs = {}
+        kwargs = {} #{'first_step': 1e-6}
     else:
         assert integrator_str == 'euler'
         integrator_class = Euler
@@ -163,6 +163,8 @@ def make_der_func(ap, model_str, v2_integrators):
 
         for i in range(num_aircraft):
             state = full_state[num_vars*i:num_vars*(i+1)]
+
+            #print(f".called der_func(aircraft={i}, t={t}, state={full_state}")
 
             alpha = state[StateIndex.ALPHA]
             if not -2 < alpha < 2:

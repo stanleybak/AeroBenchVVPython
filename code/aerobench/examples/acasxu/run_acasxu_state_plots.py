@@ -9,7 +9,6 @@ This script makes the state history plots (attitude, inner loop contols, ect) fo
 import math
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 
 from aerobench.run_f16_sim import run_f16_sim
 from aerobench.util import StateIndex, extract_single_result
@@ -68,36 +67,48 @@ def main():
 def plot_states(res, ap):
     'make traditional plots'
 
+    plot.init_plot()
+
     plot.plot_overhead(res, llc=ap.llc)
     filename = 'overhead.png'
     plt.savefig(filename)
     print(f"Made {filename}")
-    labels = ['intruder', 'ownship']
+    plt.close()
 
-    for i, l in enumerate(labels):
-        res_single = extract_single_result(res, i, ap.llc)
+    labels = ['Intruder', 'Ownship']
 
-        plot.plot_single(res_single, 'alt', title='Altitude (ft)')
-        filename = f'alt_{l}.png'
-        plt.savefig(filename)
-        print(f"Made {filename}")
+    fig, axs = plt.subplots(4, 2, figsize=(14, 20))
 
-        plot.plot_attitude(res_single)
-        filename = f'attitude_{l}.png'
-        plt.savefig(filename)
-        print(f"Made {filename}")
+    #plt.rcParams["font.size"] = 10
+    plt.rcParams['xtick.labelsize'] = 12
+    plt.rcParams['ytick.labelsize'] = 12
+    plt.rcParams['axes.labelsize'] = 12
+    plt.rcParams['axes.titlesize'] = 24
+    plt.tick_params(labelsize=6)
 
-        # plot inner loop controls + references
-        plot.plot_inner_loop(res_single)
-        filename = f'inner_loop_{l}.png'
-        plt.savefig(filename)
-        print(f"Made {filename}")
+    for col, label in enumerate(labels):
+        res_single = extract_single_result(res, col, ap.llc)
+
+        row = 0
+
+        plot.plot_single(res_single, 'alt', title=f'{label} Altitude (ft)', ax=axs[row, col])
+        row += 1
+
+        plot.plot_attitude(res_single, title=f'{label} Attitude', ax=axs[row, col])
+        row += 1
+
+        # plot inner loop controls + referenceso
+        plot.plot_inner_loop(res_single, title=f'{label} Inner Loop Controls', ax=axs[row, col])
+        row += 1
 
         # plot outer loop controls + references
-        plot.plot_outer_loop(res_single)
-        filename = f'outer_loop_{l}.png'
-        plt.savefig(filename)
-        print(f"Made {filename}")
+        plot.plot_outer_loop(res_single, title=f'{label} Outer Loop Controls', ax=axs[row, col])
+        row += 1
+
+    filename = 'states.png'
+    fig.tight_layout()
+    fig.savefig(filename)
+    print(f"Made {filename}")
 
 if __name__ == '__main__':
     main()

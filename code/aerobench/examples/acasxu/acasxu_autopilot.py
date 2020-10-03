@@ -16,7 +16,7 @@ from aerobench.util import StateIndex, get_state_names, get_script_path
 class AcasXuAutopilot(Autopilot):
     '''AcasXu autopilot'''
 
-    def __init__(self, init, llc, num_aircraft_acasxu=1, stop_on_coc=False):
+    def __init__(self, init, llc, num_aircraft_acasxu=1, stop_on_coc=False, hardcoded_u_seq=None):
         'waypoints is a list of 3-tuples'
 
         init = np.array(init, dtype=float)
@@ -26,6 +26,10 @@ class AcasXuAutopilot(Autopilot):
         self.stop_on_coc = stop_on_coc
         self.coc_time = None
         self.coc_stop_delay = 10
+
+        # used fixed outputs from acasxu system instead of running neural networks
+        self.hardcoded_u_seq = hardcoded_u_seq
+        self.hardcoded_cur_step = 0
 
         self.num_vars = len(get_state_names()) + llc.get_num_integrators()
         assert init.size % self.num_vars == 0
@@ -128,60 +132,69 @@ class AcasXuAutopilot(Autopilot):
         if t + tol > self.next_nn_update:
             self.next_nn_update = t + self.nn_update_rate
 
-            #print("--------------------")
+            if self.hardcoded_u_seq and self.hardcoded_cur_step < len(self.hardcoded_u_seq):
+                # use a hardcoded command rather than running the neural networks
 
-            for a in range(self.num_aircraft_acasxu):
-                ownship_state = x_f16[a*self.num_vars:(a+1)*self.num_vars]
+                hardcoded_command = self.hardcoded_u_seq[self.hardcoded_cur_step]
 
-                x1 = ownship_state[StateIndex.POS_E]
-                y1 = ownship_state[StateIndex.POS_N]
+                for a in range(self.num_aircraft_acasxu):
+                    self.commands[a] = hardcoded_command
 
-                stdout = False #a in [0, 5]
+                self.hardcoded_cur_step += 1
+            else:
 
-                if stdout:
-                    print(f"\nUpdating plane {a} at time {t}. State is {x1, y1}")
+                #print("--------------------")
 
-                self.commands[a] = 0 # set command to clear of conflict
-                closest_intruder_state = None
-                closest_dist_sq = np.inf
-                closest_intruder_index = None
+                for a in range(self.num_aircraft_acasxu):
+                    ownship_state = x_f16[a*self.num_vars:(a+1)*self.num_vars]
 
-                # intruder is the closest aircraft in the x/y space
-                for b in range(self.num_aircraft):
-                    if a == b:
-                        continue
+                    x1 = ownship_state[StateIndex.POS_E]
+                    y1 = ownship_state[StateIndex.POS_N]
 
-                    intruder_state = x_f16[b*self.num_vars:(b+1)*self.num_vars]
-
-                    # this updates self.all_acasxu_commands[a][b]
-                    self.update_nn_command(t, a, ownship_state, b, intruder_state, stdout=stdout)
-                    c = self.all_acasxu_commands[a][b]
-
-                    # run acas xu on the intruder
-
-                    x2 = intruder_state[StateIndex.POS_E]
-                    y2 = intruder_state[StateIndex.POS_N]
-
-                    dist_sq = (x1-x2)**2 + (y1-y2)**2
+                    stdout = False #a in [0, 5]
 
                     if stdout:
-                        print(f"b={b}. State is {x2, y2}, distSq is {dist_sq}")
+                        print(f"\nUpdating plane {a} at time {t}. State is {x1, y1}")
 
-                    if dist_sq < closest_dist_sq and c != 0:
-                        closest_intruder_state = intruder_state
-                        closest_dist_sq = dist_sq
-                        closest_intruder_index = b
-                        self.commands[a] = c
+                    self.commands[a] = 0 # set command to clear of conflict
+                    closest_dist_sq = np.inf
+                    closest_intruder_index = None
 
-                if stdout:
-                    print(f"closest intruder index: {closest_intruder_index}")
-                    print(f"command issued: {self.labels[self.commands[a]]} ({self.commands[a]})")
+                    # intruder is the closest aircraft in the x/y space
+                    for b in range(self.num_aircraft):
+                        if a == b:
+                            continue
 
-                self.history.append((self.commands[a], ownship_state))
-                self.closest_intruder_indices[a] = closest_intruder_index
+                        intruder_state = x_f16[b*self.num_vars:(b+1)*self.num_vars]
 
-            tup = (t, np.array(self.all_acasxu_commands), np.array(self.closest_intruder_indices))
-            self.full_history.append(tup)
+                        # this updates self.all_acasxu_commands[a][b]
+                        self.update_nn_command(t, a, ownship_state, b, intruder_state, stdout=stdout)
+                        c = self.all_acasxu_commands[a][b]
+
+                        # run acas xu on the intruder
+
+                        x2 = intruder_state[StateIndex.POS_E]
+                        y2 = intruder_state[StateIndex.POS_N]
+
+                        dist_sq = (x1-x2)**2 + (y1-y2)**2
+
+                        if stdout:
+                            print(f"b={b}. State is {x2, y2}, distSq is {dist_sq}")
+
+                        if dist_sq < closest_dist_sq and c != 0:
+                            closest_dist_sq = dist_sq
+                            closest_intruder_index = b
+                            self.commands[a] = c
+
+                    if stdout:
+                        print(f"closest intruder index: {closest_intruder_index}")
+                        print(f"command issued: {self.labels[self.commands[a]]} ({self.commands[a]})")
+
+                    self.history.append((self.commands[a], ownship_state))
+                    self.closest_intruder_indices[a] = closest_intruder_index
+
+                tup = (t, np.array(self.all_acasxu_commands), np.array(self.closest_intruder_indices))
+                self.full_history.append(tup)
 
         self.mode = "/".join([self.labels[c] for c in self.commands])
         rv = premode != self.mode
@@ -508,7 +521,7 @@ def cart2sph(pt3d):
 
     return az, elev, r
 
-def make_intruder_waypoints(init, num_vars, hypot=250000):
+def make_intruder_waypoints(init, num_vars, hypot=1e6):
     '''make the intruder waypoints (list of 3-tuples)
 
     assumes intruder just flies straight
@@ -554,6 +567,12 @@ def predict_with_onnxruntime(sess, input_tensor):
 
 def scale_and_run_network(sess, data_in, stdout):
     'scale inputs and run network'
+
+    input_ranges = [[0, 60760], [-pi, pi], [-pi, pi], [100, 1200], [0, 1200]]
+
+    for i, (val, input_range) in enumerate(zip(data_in, input_ranges)):
+        assert input_range[0] - 1e-6 <= val <= input_range[1] + 1e-6, \
+            f"acasxu neural network input {i} ({val}) not in range {input_range}"
 
     means_for_scaling = [19791.091, 0.0, 0.0, 650.0, 600.0, 7.5188840201005975]
     range_for_scaling = [60261.0, 6.28318530718, 6.28318530718, 1100.0, 1200.0]

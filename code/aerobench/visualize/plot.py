@@ -73,16 +73,19 @@ def plot_overhead(run_sim_result, waypoints=None, llc=None):
 
     plt.tight_layout()
 
-def plot_attitude(run_sim_result, title='Attitude History', skip_yaw=True, figsize=(7, 5)):
+def plot_attitude(run_sim_result, title='Attitude History', skip_yaw=True, figsize=(7, 5), ax=None):
     'plot a single variable over time'
 
-    init_plot()
-
+    make_ax = ax is None
     res = run_sim_result
-    fig = plt.figure(figsize=figsize)
 
-    ax = fig.add_subplot(1, 1, 1)
-    ax.ticklabel_format(useOffset=False)
+    if make_ax:
+        init_plot()
+
+        fig = plt.figure(figsize=figsize)
+
+        ax = fig.add_subplot(1, 1, 1)
+        ax.ticklabel_format(useOffset=False)
 
     times = res['times']
     states = res['states']
@@ -96,7 +99,7 @@ def plot_attitude(run_sim_result, title='Attitude History', skip_yaw=True, figsi
     for index, label, color in zip(indices, labels, colors):
         if skip_yaw and index == StateIndex.PSI:
             continue
-        
+
         ys = states[:, index] # 11: altitude (ft)
 
         ax.plot(times, ys * rad_to_deg_factor, color, label=label)
@@ -108,19 +111,24 @@ def plot_attitude(run_sim_result, title='Attitude History', skip_yaw=True, figsi
         ax.set_title(title)
 
     ax.legend()
-    plt.tight_layout()
 
-def plot_outer_loop(run_sim_result, title='Outer Loop Controls'):
+    if make_ax:
+        plt.tight_layout()
+
+def plot_outer_loop(run_sim_result, title='Outer Loop Controls', ax=None):
     'plot a single variable over time'
-
-    init_plot()
 
     res = run_sim_result
     assert 'u_list' in res, "Simulation must be run with extended_states=True"
-    fig = plt.figure(figsize=(7, 5))
+    make_ax = ax is None
 
-    ax = fig.add_subplot(1, 1, 1)
-    ax.ticklabel_format(useOffset=False)
+    if make_ax:
+        init_plot()
+
+        fig = plt.figure(figsize=(7, 5))
+
+        ax = fig.add_subplot(1, 1, 1)
+        ax.ticklabel_format(useOffset=False)
 
     times = res['times']
     u_list = res['u_list']
@@ -160,19 +168,25 @@ def plot_outer_loop(run_sim_result, title='Outer Loop Controls'):
         ax.set_title(title)
 
     ax.legend()
-    plt.tight_layout()
 
-def plot_inner_loop(run_sim_result, title='Inner Loop Controls'):
+    if make_ax:
+        plt.tight_layout()
+
+def plot_inner_loop(run_sim_result, title='Inner Loop Controls', ax=None):
     'plot inner loop controls over time'
-
-    init_plot()
 
     res = run_sim_result
     assert 'u_list' in res, "Simulation must be run with extended_states=True"
-    fig = plt.figure(figsize=(7, 5))
 
-    ax = fig.add_subplot(1, 1, 1)
-    ax.ticklabel_format(useOffset=False)
+    make_ax = ax is None
+
+    if make_ax:
+        init_plot()
+
+        fig = plt.figure(figsize=(7, 5))
+
+        ax = fig.add_subplot(1, 1, 1)
+        ax.ticklabel_format(useOffset=False)
 
     times = res['times']
     u_list = res['u_list']
@@ -199,18 +213,23 @@ def plot_inner_loop(run_sim_result, title='Inner Loop Controls'):
         ax.set_title(title)
 
     ax.legend()
-    plt.tight_layout()
 
-def plot_single(run_sim_result, state_name, title=None):
+    if make_ax:
+        plt.tight_layout()
+
+def plot_single(run_sim_result, state_name, title=None, ax=None):
     'plot a single variable over time'
 
-    init_plot()
-
+    make_ax = ax is None
     res = run_sim_result
-    fig = plt.figure(figsize=(7, 5))
 
-    ax = fig.add_subplot(1, 1, 1)
-    ax.ticklabel_format(useOffset=False)
+    if ax is None:
+        init_plot()
+
+        fig = plt.figure(figsize=(7, 5))
+
+        ax = fig.add_subplot(1, 1, 1)
+        ax.ticklabel_format(useOffset=False)
 
     times = res['times']
     states = res['states']
@@ -226,16 +245,8 @@ def plot_single(run_sim_result, state_name, title=None):
     if title is not None:
         ax.set_title(title)
 
-    plt.tight_layout()
-
-def plot_altitude(run_sim_result):
-    '''altitude over time plot from run_f16_sum result object
-
-    note: call plt.show() afterwards to have plot show up
-    '''
-
-    plot_single(run_sim_result, 'alt')
-    
+    if make_ax:
+        plt.tight_layout()
 
 def plot2d(filename, times, plot_data_list):
     '''plot state variables in 2d
