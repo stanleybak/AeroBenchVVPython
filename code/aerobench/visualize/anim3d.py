@@ -321,8 +321,8 @@ def make_anim(res, filename, viewsize=1000, viewsize_z=1000, f16_scale=30, trail
         pos_ys = [pt[StateIndex.POS_N] for pt in states]
         pos_zs = [pt[StateIndex.ALT] for pt in states]
 
-        trail_line.set_data(pos_xs[start_index:frame], pos_ys[start_index:frame])
-        trail_line.set_3d_properties(pos_zs[start_index:frame])
+        trail_line.set_data(np.asarray(pos_xs[start_index:frame]), np.asarray(pos_ys[start_index:frame]))
+        trail_line.set_3d_properties(np.asarray(pos_zs[start_index:frame]))
 
         if update_extra[index] is not None:
             update_extra[index](frame)
