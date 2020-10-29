@@ -18,6 +18,7 @@ from aerobench.run_f16_sim import run_f16_sim
 from aerobench.visualize import anim3d, plot
 
 from aerobench.examples.gcas.gcas_autopilot import GcasAutopilot
+from aerobench.util import SafetyLimits, SafetyLimitsVerifier
 
 def simulate():
     'sim system and return res'
@@ -57,11 +58,24 @@ def simulate():
 
     print(f"Simulation Completed in {round(res['runtime'], 2)} seconds")
 
+    # Determine whether the GCAS system kept the plane in a safe state
+    # the entire time.
+    safety_limits = SafetyLimits( \
+        altitude=(0, 45000), #ft \
+        Nz=(-5, 18), #G's \
+        v=(300, 2500), # ft/s \
+        alpha=(-10, 45), # deg \
+        betaMaxDeg=30,# deg
+        psMaxAccelDeg=500) # deg/s/s
+
+    verifier = SafetyLimitsVerifier(safety_limits, ap.llc)
+    verifier.verify(res)
+
     return res
 
 def main():
     'main function'
-    
+
     if len(sys.argv) > 1 and (sys.argv[1].endswith('.mp4') or sys.argv[1].endswith('.gif')):
         filename = sys.argv[1]
         print(f"saving result to '{filename}'")
