@@ -3,7 +3,7 @@ Stanley Bak
 
 AcasXu f16 sim
 
-This script makes the decision point plots for multiple simulations.
+This script simulates multiple aircraft.
 '''
 
 import math
@@ -19,6 +19,42 @@ from aerobench.lowlevel.low_level_controller import LowLevelController
 
 from aerobench.examples.acasxu.acasxu_autopilot import AcasXuAutopilot
 
+def make_init(llc, num_aircraft, diameter=25000):
+    'returns combined initial state'
+
+    rv = []
+
+    # psi = 0 is facing up
+    step = 2* math.pi / num_aircraft
+    rad = diameter / 2
+    center = (0, rad/2)
+
+    theta_offset = -math.pi/2
+
+    # use trim state
+
+    for a in range(num_aircraft):
+        #print("debug: only making 0 and 5")
+        #if a != 0 and a != 5:
+        #    continue
+
+        theta = theta_offset + step * a
+        y = rad * math.sin(theta)
+        x = rad* math.cos(theta)
+
+        psi = -(theta + theta_offset) + math.pi
+
+        init = list(llc.xequil)
+        init[StateIndex.VT] = 807
+        init[StateIndex.POSE] = x + center[0]
+        init[StateIndex.POSN] = y + center[1]
+        init[StateIndex.PSI] = psi
+        init += [0] * llc.get_num_integrators()
+
+        rv += init
+
+    return rv
+
 def main():
     'main function to make plots'
 
@@ -32,7 +68,7 @@ def main():
     if len(sys.argv) > 1:
         num_aircraft = int(sys.argv[1])
     else:
-        num_aircraft = 2
+        num_aircraft = 3
 
     if len(sys.argv) > 2:
         diameter = float(sys.argv[2])
@@ -50,7 +86,7 @@ def main():
     stop_on_coc = True
     ap = AcasXuAutopilot(init, llc, num_aircraft_acasxu=num_aircraft_acasxu, stop_on_coc=stop_on_coc)
 
-    ap.coc_stop_delay = 40
+    ap.coc_stop_delay = 20
 
     #print("debug: initial command fixed")
     #ap.next_nn_update = ap.nn_update_rate
@@ -86,7 +122,7 @@ def main():
 
         return lines + labels
 
-    def anim_update_extra(_ax, t, state):
+    def anim_update_extra(_ax, t, state, _mode):
         'extra animation update'
 
         closest_tuple = ap.full_history[0]
@@ -161,42 +197,6 @@ def main():
     anim.make_anim(res, llc, mp4_filename, show_closest=show_closest, print_frame=print_frame,
                    skip_frames=skip_frames,
                    init_extra=anim_init_extra, update_extra=anim_update_extra)
-
-def make_init(llc, num_aircraft, diameter=25000):
-    'returns combined initial state'
-
-    rv = []
-
-    # psi = 0 is facing up
-    step = 2* math.pi / num_aircraft
-    rad = diameter / 2
-    center = (0, rad/2)
-
-    theta_offset = -math.pi/2
-
-    # use trim state
-
-    for a in range(num_aircraft):
-        #print("debug: only making 0 and 5")
-        #if a != 0 and a != 5:
-        #    continue
-            
-        theta = theta_offset + step * a
-        y = rad * math.sin(theta)
-        x = rad* math.cos(theta)
-
-        psi = -(theta + theta_offset) + math.pi
-
-        init = list(llc.xequil)
-        init[StateIndex.VT] = 807
-        init[StateIndex.POSE] = x + center[0]
-        init[StateIndex.POSN] = y + center[1]
-        init[StateIndex.PSI] = psi
-        init += [0] * llc.get_num_integrators()
-
-        rv += init
-
-    return rv
 
 if __name__ == '__main__':
     main()

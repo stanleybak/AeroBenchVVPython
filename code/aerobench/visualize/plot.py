@@ -6,6 +6,13 @@ Python code for F-16 animation video output
 import math
 import os
 
+from scipy import ndimage
+
+import numpy as np
+
+from matplotlib.image import BboxImage
+from matplotlib.transforms import Bbox, TransformedBbox
+
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -21,16 +28,87 @@ def init_plot():
 
     plt.style.use(['bmh', p])
 
-def plot_overhead(run_sim_result, waypoints=None, llc=None):
+def set_axis_limits(ax, num_vars, states, zoom_factor=1.2):
+    '''set axis limits
+
+    returns [xmin, xmax, ymin, ymax]
+    '''
+
+    assert len(states) > 0
+
+    minx, miny = np.inf, np.inf
+    maxx, maxy = -np.inf, -np.inf
+
+    for state in states:
+        start = 0
+        end = num_vars
+
+        while start < state.size:
+            s = state[start:end]
+            start = end
+            end += num_vars
+
+            x = s[StateIndex.POS_E]
+            y = s[StateIndex.POS_N]
+
+            minx = min(minx, x)
+            maxx = max(maxx, x)
+            miny = min(miny, y)
+            maxy = max(maxy, y)
+
+    dx = maxx - minx
+    dy = maxy - miny
+
+    if dx < dy:
+        midx = (maxx + minx) / 2
+
+        minx = midx - dy/2
+        maxx = midx + dy/2
+        dx = dy
+    elif dy < dx:
+        midy = (maxy + miny) / 2
+
+        miny = midy - dx/2
+        maxy = midy + dx/2
+        dy = dx
+
+    print(f"zoom_factor: {zoom_factor}, x range before: {minx, maxx}")
+    # adjust zoom
+    midx = (maxx + minx) / 2
+    midy = (maxy + miny) / 2
+
+    minx = midx - zoom_factor * dx/2
+    maxx = midx + zoom_factor * dx/2
+
+    miny = midy - zoom_factor * dy/2
+    maxy = midy + zoom_factor * dy/2
+
+    print(f"x range after: {minx, maxx}")
+
+    # add buffer
+    xs = [minx, maxx]
+    ys = [miny, maxy]
+
+    ax.set_xlim(xs)
+    ax.set_ylim(ys)
+
+    return xs + ys
+
+def plot_overhead(run_sim_result, waypoints=None, llc=None, figsize=(7, 5), plot_frame=0, plane_size_factor=0.05,
+                  zoom_factor=1.2, axis_limits=None, aircraft_red_mask=None):
     '''altitude over time plot from run_f16_sum result object
 
     note: call plt.show() afterwards to have plot show up
+
+    plane_size_factor is percent of axis limits
+
+    returns axis object
     '''
 
     init_plot()
 
     res = run_sim_result
-    fig = plt.figure(figsize=(7, 5))
+    fig = plt.figure(figsize=figsize)
 
     ax = fig.add_subplot(1, 1, 1)
 
@@ -43,7 +121,38 @@ def plot_overhead(run_sim_result, waypoints=None, llc=None):
         num_vars = full_states[0, :].size
         num_aircraft = 1
 
-    print(f"num_aircraft = {num_aircraft}")
+    if axis_limits is not None:
+        ax.set_xlim(axis_limits[:2])
+        ax.set_ylim(axis_limits[2:])
+    else:
+        axis_limits = set_axis_limits(ax, num_vars, res['states'], zoom_factor)
+
+    parent = get_script_path(__file__)
+    plane_path = os.path.join(parent, 'airplane.png')
+    black_img = plt.imread(plane_path)
+
+    red_img = black_img.copy()
+    red_img[:, :, 0] = 1
+    red_img[:, :, 1:3] = 0
+
+    planes = []
+
+    # init planes
+    for i in range(num_aircraft):
+        size = (axis_limits[1] - axis_limits[0]) * plane_size_factor
+        box = Bbox.from_bounds(0, 0, size, size)
+        tbox = TransformedBbox(box, ax.transData)
+        box_image = BboxImage(tbox, zorder=2)
+
+        #theta_deg = (theta - math.pi / 2) / math.pi * 180 # original image is facing up, not right
+        theta_deg = 0
+        i = black_img if aircraft_red_mask is None or not aircraft_red_mask[i] else red_img
+        img_rotated = ndimage.rotate(i, theta_deg, order=1)
+
+        box_image.set_data(img_rotated)
+        ax.add_artist(box_image)
+
+        planes.append(box_image)
 
     for i in range(num_aircraft):
         states = full_states[:, i*num_vars:(i+1)*num_vars]
@@ -51,10 +160,34 @@ def plot_overhead(run_sim_result, waypoints=None, llc=None):
         ys = states[:, StateIndex.POSN] # 9: n/s position (ft)
         xs = states[:, StateIndex.POSE] # 10: e/w position (ft)
 
-        ax.plot(xs, ys, '-')
+        if plot_frame == 0:
+            ax.plot(xs, ys, '-')
+        else:
+            line = ax.plot(xs, ys, ':', zorder=1)[0]
+            ax.plot(xs[:plot_frame+1], ys[:plot_frame+1], '-', color=line.get_color(), zorder=2)
 
-        label = 'Start' if i == 0 else None
-        ax.plot([xs[0]], [ys[1]], 'k*', ms=8, label=label)
+        #label = 'Start' if i == 0 else None
+        #ax.plot([xs[0]], [ys[1]], 'k*', ms=8, label=label)
+        # plot aircraft image
+        psi = states[plot_frame, StateIndex.PSI]
+        x = states[plot_frame, StateIndex.POS_E]
+        y = states[plot_frame, StateIndex.POS_N]
+        theta_deg = -psi * 180 / math.pi
+
+        img = black_img if aircraft_red_mask is None or not aircraft_red_mask[i] else red_img
+        
+        original_size = list(img.shape)
+        img_rotated = ndimage.rotate(img, theta_deg, order=1)
+        rotated_size = list(img_rotated.shape)
+        ratios = [r / o for r, o in zip(rotated_size, original_size)]
+        planes[i].set_data(img_rotated)
+
+        size = (axis_limits[1] - axis_limits[0]) * plane_size_factor
+        width = size * ratios[0]
+        height = size * ratios[1]
+        box = Bbox.from_bounds(x - width/2, y - height/2, width, height)
+        tbox = TransformedBbox(box, ax.transData)
+        planes[i].bbox = tbox
 
     if waypoints is not None:
         xs = [wp[0] for wp in waypoints]
@@ -64,14 +197,10 @@ def plot_overhead(run_sim_result, waypoints=None, llc=None):
 
     ax.set_ylabel('North / South Position (ft)')
     ax.set_xlabel('East / West Position (ft)')
-    
+
     ax.set_title('Overhead Plot')
 
-    ax.axis('equal')
-
-    ax.legend()
-
-    plt.tight_layout()
+    return ax
 
 def plot_attitude(run_sim_result, title='Attitude History', skip_yaw=True, figsize=(7, 5), ax=None):
     'plot a single variable over time'

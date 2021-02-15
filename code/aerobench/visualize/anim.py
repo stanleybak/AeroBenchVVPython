@@ -7,14 +7,12 @@ import time
 import os
 import traceback
 
-from scipy.io import loadmat
 from scipy import ndimage
 
 from matplotlib.image import BboxImage
 from matplotlib.transforms import Bbox, TransformedBbox
 
 import numpy as np
-from numpy import rad2deg
 
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
@@ -65,16 +63,20 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
     ##
     all_times = []
     all_states = []
+    all_modes = []
 
     for r, skip in zip(res, skip_frames):
         t = r['times']
         s = r['states']
+        m = r['modes']
 
         t = t[0::skip]
         s = s[0::skip]
+        m = m[0::skip]
 
         all_times.append(t)
         all_states.append(s)
+        all_modes.append(m)
             
     ##
 
@@ -99,7 +101,7 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
     ax.set_ylabel('Y [ft]', fontsize=14)
 
     states = all_states[0]
-    axis_limits = set_axis_limits(ax, num_vars, states)
+    axis_limits = plot.set_axis_limits(ax, num_vars, states)
 
     parent = get_script_path(__file__)
     plane_path = os.path.join(parent, 'airplane.png')
@@ -107,9 +109,10 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
 
     planes = []
     plane_trails = []
+    plane_previews = []
     plane_size_factor = 0.05 # percent of axis limits
 
-    for _ in range(max_num_planes):
+    for i in range(max_num_planes):
         size = (axis_limits[1] - axis_limits[0]) * plane_size_factor
         box = Bbox.from_bounds(0, 0, size, size)
         tbox = TransformedBbox(box, ax.transData)
@@ -124,8 +127,11 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
 
         planes.append(box_image)
 
-        trail, = ax.plot([], [], lw=1, zorder=1)
+        trail, = ax.plot([], [], lw=1, zorder=2)
         plane_trails.append(trail)
+
+        preview, = ax.plot([], [], ':', color=trail.get_color(), lw=1, zorder=1)
+        plane_previews.append(preview)
 
     # text
     fontsize = 13
@@ -179,11 +185,14 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
         frame = global_frame - first_frames[index]
         states = all_states[index]
         times = all_times[index]
+        modes = all_modes[index]
 
         if print_frame:
             print(f"Frame: {global_frame}/{frames} - Index {index} frame {frame}/{len(times)}")
 
         time_text.set_text(f"Time: {round(times[frame], 1)} sec")
+
+        mode = modes[frame]
 
         state = states[frame]
         num_planes = num_planes_list[index]
@@ -221,7 +230,7 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
         min_lines[1].set_data(dist_data[1][0], dist_data[1][1])
 
         if first_frame:
-            axis_limits[:] = set_axis_limits(ax, num_vars, states)
+            axis_limits[:] = plot.set_axis_limits(ax, num_vars, states)
 
             # initialize dist_stats (index 0: cur_min, index 1: total_min)
             for i, lines in enumerate(extra_lines):
@@ -230,7 +239,7 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
 
             for i, (p, t) in enumerate(zip(planes, plane_trails)):
                 is_vis = i < num_planes_list[index]
-                
+
                 p.set_visible(is_vis)
                 t.set_visible(is_vis)
 
@@ -242,13 +251,14 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
             pos_ys = [pt[offset + StateIndex.POS_N] for pt in states]
 
             plane_trails[i].set_data(pos_xs[:frame], pos_ys[:frame])
+            plane_previews[i].set_data(pos_xs, pos_ys)
 
             # do plane images
             s = state[i*num_vars:(i+1)*num_vars]
             psi = s[StateIndex.PSI]
             x = s[StateIndex.POS_E]
             y = s[StateIndex.POS_N]
-            
+
             theta_deg = -psi * 180 / math.pi
             original_size = list(img.shape)
             img_rotated = ndimage.rotate(img, theta_deg, order=1)
@@ -264,7 +274,7 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
             planes[i].bbox = tbox
 
         if update_extra[index] is not None:
-            update_extra[index](frame, times[frame], state)
+            update_extra[index](frame, times[frame], state, mode)
 
     plt.tight_layout()
 
@@ -302,51 +312,3 @@ def make_anim(res, llc, filename, skip_frames=None, figsize=(7, 5), show_closest
                 print("\nSaving video file failed! Is ffmpeg installed? Can you run 'ffmpeg' in the terminal?")
     else:
         plt.show()
-
-def set_axis_limits(ax, num_vars, states):
-    '''set axis limits
-
-    returns [xmin, xmax, ymin, ymax]
-    '''
-
-    assert len(states) > 0
-
-    minx, miny = np.inf, np.inf
-    maxx, maxy = -np.inf, -np.inf
-
-    for state in states:
-        start = 0
-        end = num_vars
-
-        while start < state.size:
-            s = state[start:end]
-            start = end
-            end += num_vars
-
-            x = s[StateIndex.POS_E]
-            y = s[StateIndex.POS_N]
-
-            minx = min(minx, x)
-            maxx = max(maxx, x)
-            miny = min(miny, y)
-            maxy = max(maxy, y)
-
-    dx = maxx - minx
-    dy = maxy - miny
-
-    if dx < dy:
-        midx = (maxx + minx) / 2
-        minx = midx - dy/2
-        maxx = midx + dy/2
-
-    buffer_scale = 0.1
-    buffer_x = (maxx - minx) * buffer_scale
-    buffer_y = (maxy - miny) * buffer_scale
-
-    xs = [minx - buffer_x, maxx + buffer_x]
-    ys = [miny - buffer_y, maxy + buffer_y]
-    
-    ax.set_xlim(xs)
-    ax.set_ylim(ys)
-
-    return xs + ys

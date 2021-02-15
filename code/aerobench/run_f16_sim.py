@@ -20,13 +20,15 @@ class F16SimState(Freezable):
     '''
 
     def __init__(self, initial_state, ap, step=1/30, extended_states=False,
-                integrator_str='rk45', v2_integrators=False, print_errors=True, keep_intermediate_states=True):
+                integrator_str='rk45', v2_integrators=False, print_errors=True, keep_intermediate_states=True,
+                 custom_stop_func=None):
 
         self.model_str = model_str = ap.llc.model_str
         self.v2_integrators = v2_integrators
         initial_state = np.array(initial_state, dtype=float)
 
         self.keep_intermediate_states = keep_intermediate_states
+        self.custom_stop_func = custom_stop_func
 
         self.step = step
         self.ap = ap
@@ -44,24 +46,24 @@ class F16SimState(Freezable):
             x0 = initial_state
 
         assert x0.size % num_vars == 0, f"expected initial state ({x0.size} vars) to be multiple of {num_vars} vars"
+        self.x0 = x0
+        self.ap = ap
 
-        self.times = times = [0]
-        self.states = states = [x0]
+        self.times = None
+        self.states = None
+        self.modes = None
 
-        # mode can change at time 0
-        ap.advance_discrete_mode(times[-1], states[-1])
-
-        self.modes = [ap.mode]
         self.extended_states = extended_states
 
-        if extended_states:
-            xd, u, Nz, ps, Ny_r = get_extended_states(ap, times[-1], states[-1], model_str, v2_integrators)
+        if self.extended_states:
+            self.xd_list = None
+            self.u_list = None
+            self.Nz_list = None
+            self.ps_list = None
+            self.Ny_r_list = None
 
-            self.xd_list = [xd]
-            self.u_list = [u]
-            self.Nz_list = [Nz]
-            self.ps_list = [ps]
-            self.Ny_r_list = [Ny_r]
+        self.cur_sim_time = 0
+        self.total_sim_time = 0
 
         self.der_func = make_der_func(ap, model_str, v2_integrators)
 
@@ -74,41 +76,78 @@ class F16SimState(Freezable):
             self.integrator_kwargs = {'step': step}
 
         self.integrator_class = integrator_class
-        
-        # note: fixed_step argument is unused by rk45, used with euler
-        self.integrator = integrator_class(self.der_func, times[-1], states[-1], np.inf, **self.integrator_kwargs)
-        self.cur_sim_time = 0
-
-        self.total_sim_time = 0
+        self.integrator = None
 
         self.freeze_attrs()
 
-    def simulate_to(self, tmax, tol=1e-7):
+    def init_simulation(self):
+        'initial simulation (upon first call to simulate_to)'
+
+        assert self.integrator is None
+
+        self.times = [0]
+        self.states = [self.x0]
+
+        # mode can change at time 0
+        self.ap.advance_discrete_mode(self.times[-1], self.states[-1])
+
+        self.modes = [self.ap.mode]
+
+        if self.extended_states:
+            xd, u, Nz, ps, Ny_r = get_extended_states(self.ap, self.times[-1], self.states[-1],
+                                                      self.model_str, self.v2_integrators)
+
+            self.xd_list = [xd]
+            self.u_list = [u]
+            self.Nz_list = [Nz]
+            self.ps_list = [ps]
+            self.Ny_r_list = [Ny_r]
+        
+        # note: fixed_step argument is unused by rk45, used with euler
+        self.integrator = self.integrator_class(self.der_func, self.times[-1], self.states[-1], np.inf,
+                                                **self.integrator_kwargs)
+
+    def simulate_to(self, tmax, tol=1e-7, update_mode_at_start=False):
         '''simulate up to the passed in time
 
         this adds states to self.times, self.states, self.modes, and the other extended state lists if applicable 
         '''
 
+        # underflow errors were occuring if I don't do this
+        oldsettings = np.geterr()
+        np.seterr(all='raise', under='ignore')
+
         start = time.perf_counter()
+
+        ap = self.ap
+        step = self.step
+
+        if self.integrator is None:
+            self.init_simulation()
+        elif update_mode_at_start:
+            mode_changed = ap.advance_discrete_mode(self.times[-1], self.states[-1])
+            self.modes[-1] = ap.mode # overwrite last mode
+
+            if mode_changed:
+                # re-initialize the integration class on discrete mode switches
+                self.integrator = self.integrator_class(self.der_func, self.times[-1], self.states[-1], np.inf, \
+                                                        **self.integrator_kwargs)
 
         assert tmax >= self.cur_sim_time
         self.cur_sim_time = tmax
 
-        ap = self.ap
-        integrator = self.integrator
-        times = self.times
-        states = self.states
-        modes = self.modes
-        step = self.step
+        assert self.integrator.status == 'running', \
+            f"integrator status was {self.integrator.status} in call to simulate_to()"
 
-        assert integrator.status == 'running', f"integrator status was {integrator.status} in call to simulate_to()"
+        assert len(self.modes) == len(self.times), f"modes len was {len(self.modes)}, times len was {len(self.times)}"
+        assert len(self.states) == len(self.times)
 
         while True:
-            if not self.keep_intermediate_states and len(times) > 1:
+            if not self.keep_intermediate_states and len(self.times) > 1:
                 # drop all except last state
-                times = [times[-1]]
-                states = [states[-1]]
-                modes = [modes[-1]]
+                self.times = [self.times[-1]]
+                self.states = [self.states[-1]]
+                self.modes = [self.modes[-1]]
 
                 if self.extended_states:
                     self.xd_list = [self.xd_list[-1]]
@@ -116,10 +155,10 @@ class F16SimState(Freezable):
                     self.Nz_list = [self.Nz_list[-1]]
                     self.ps_list = [self.ps_list[-1]]
                     self.Ny_r_list = [self.Ny_r_list[-1]]
-                    
-            next_step_time = times[-1] + step
 
-            if abs(times[-1] - tmax) > tol and next_step_time > tmax:
+            next_step_time = self.times[-1] + step
+
+            if abs(self.times[-1] - tmax) > tol and next_step_time > tmax:
                 # use a small last step
                 next_step_time = tmax
 
@@ -129,30 +168,30 @@ class F16SimState(Freezable):
 
             # goal for rest of the loop: do one more step
 
-            while next_step_time >= integrator.t + tol:
+            while next_step_time >= self.integrator.t + tol:
                 # keep advancing integrator until it goes past the next step time
-                integrator.step()
-                if integrator.status != 'running':
+                assert self.integrator.status == 'running'
+                
+                self.integrator.step()
+
+                if self.integrator.status != 'running':
                     break
 
-            if integrator.status != 'running':
+            if self.integrator.status != 'running':
                 break
 
             # get the state at next_step_time
-            times.append(next_step_time)
+            self.times.append(next_step_time)
 
-            if abs(integrator.t - next_step_time) < tol:
-                states.append(integrator.x)
+            if abs(self.integrator.t - next_step_time) < tol:
+                self.states.append(self.integrator.x)
             else:
-                dense_output = integrator.dense_output()
-                states.append(dense_output(next_step_time))
-
-            mode_changed = ap.advance_discrete_mode(times[-1], states[-1])
-            modes.append(ap.mode)
+                dense_output = self.integrator.dense_output()
+                self.states.append(dense_output(next_step_time))
 
             # re-run dynamics function at current state to get non-state variables
             if self.extended_states:
-                xd, u, Nz, ps, Ny_r = get_extended_states(ap, times[-1], states[-1],
+                xd, u, Nz, ps, Ny_r = get_extended_states(ap, self.times[-1], self.states[-1],
                                                           self.model_str, self.v2_integrators)
 
                 self.xd_list.append(xd)
@@ -162,23 +201,32 @@ class F16SimState(Freezable):
                 self.ps_list.append(ps)
                 self.Ny_r_list.append(Ny_r)
 
-            if ap.is_finished(times[-1], states[-1]):
+            mode_changed = ap.advance_discrete_mode(self.times[-1], self.states[-1])
+            self.modes.append(ap.mode)
+
+            stop_func = self.custom_stop_func if self.custom_stop_func is not None else ap.is_finished
+
+            if stop_func(self.times[-1], self.states[-1]):
                 # this both causes the outer loop to exit and sets res['status'] appropriately
-                integrator.status = 'autopilot finished'
+                self.integrator.status = 'autopilot finished'
                 break
 
             if mode_changed:
                 # re-initialize the integration class on discrete mode switches
-                self.integrator = integrator = self.integrator_class(self.der_func, times[-1], states[-1], np.inf,
-                                                                     **self.integrator_kwargs)
+                self.integrator = self.integrator_class(self.der_func, self.times[-1], self.states[-1], np.inf,
+                                                        **self.integrator_kwargs)
 
-        if integrator.status == 'failed' and self.print_errors:
-            print(f'Warning: integrator status was "{integrator.status}"')
+        if self.integrator.status == 'failed' and self.print_errors:
+            print(f'Warning: integrator status was "{self.integrator.status}"')
+        elif self.integrator.status != 'autopilot finished':
+            assert abs(self.times[-1] - tmax) < tol, f"tmax was {tmax}, self.times[-1] was {self.times[-1]}"
 
         self.total_sim_time += time.perf_counter() - start
+        np.seterr(**oldsettings)
 
 def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False,
-                integrator_str='rk45', v2_integrators=False, print_errors=True):
+                integrator_str='rk45', v2_integrators=False, print_errors=True,
+                custom_stop_func=None):
     '''Simulates and analyzes autonomous F-16 maneuvers
 
     if multiple aircraft are to be simulated at the same time,
@@ -201,12 +249,9 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False,
     '''
 
     fss = F16SimState(initial_state, ap, step, extended_states,
-                integrator_str, v2_integrators, print_errors)
+                integrator_str, v2_integrators, print_errors, custom_stop_func=custom_stop_func)
 
     fss.simulate_to(tmax)
-
-    assert abs(fss.times[-1] - tmax) < 1e-7, f"asked for simulation to time {tmax} with step {step}, " + \
-      f"got final time {fss.times[-1]}"
 
     # extract states
 

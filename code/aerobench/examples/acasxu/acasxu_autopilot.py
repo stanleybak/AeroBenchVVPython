@@ -1,7 +1,8 @@
-'''waypoint autopilot
-
-ported from matlab v2
+'''acasxu autopilot
+with support for multiple aircraft
 '''
+
+from typing import List, Optional
 
 import os
 from math import pi, atan2, sqrt, sin, cos, asin
@@ -16,7 +17,8 @@ from aerobench.util import StateIndex, get_state_names, get_script_path
 class AcasXuAutopilot(Autopilot):
     '''AcasXu autopilot'''
 
-    def __init__(self, init, llc, num_aircraft_acasxu=1, stop_on_coc=False, hardcoded_u_seq=None):
+    def __init__(self, init, llc, num_aircraft_acasxu=1, stop_on_coc=False,
+                 hardcoded_u_seq=None, stdout=True):
         'waypoints is a list of 3-tuples'
 
         init = np.array(init, dtype=float)
@@ -72,20 +74,22 @@ class AcasXuAutopilot(Autopilot):
         self.nn_update_rate = 2.0
         self.next_nn_update = 0
 
-
         # current ownship commands
-        self.commands = [0] * self.num_aircraft_acasxu 
+        self.commands = [0] * self.num_aircraft_acasxu
 
         # list with one entry for each acasxu aircraft
         # each list entry is a list with one element for every other aircraft (and 0 for self),
         # which is the last acasxu command for that aircraft
         self.all_acasxu_commands = []
 
+        # this is the command used at each step for each acasxu aircraft. you can pass this into hardcoded_command_seq
+        self.command_history = []
+
         for _ in range(self.num_aircraft_acasxu):
             self.all_acasxu_commands.append([0] * self.num_aircraft)
 
         # closest intruder with no clear of conflict command
-        self.closest_intruder_indices = [None] * self.num_aircraft_acasxu
+        self.closest_intruder_indices: List[Optional[int]] = [None] * self.num_aircraft_acasxu
 
         self.labels = ['clear', 'weak-left', 'weak-right', 'strong-left', 'strong-right']
 
@@ -94,10 +98,10 @@ class AcasXuAutopilot(Autopilot):
         # list of 3-tuples: (time, all_acasxu_commands, closest_intruder_indices)
         self.full_history = []
 
-        self.stdout = True
+        self.stdout = stdout
 
         mode = "/".join([self.labels[c] for c in self.commands])
-        
+
         Autopilot.__init__(self, mode, llc=llc)
 
     def is_finished(self, t, x_f16):
@@ -132,13 +136,18 @@ class AcasXuAutopilot(Autopilot):
         if t + tol > self.next_nn_update:
             self.next_nn_update = t + self.nn_update_rate
 
-            if self.hardcoded_u_seq and self.hardcoded_cur_step < len(self.hardcoded_u_seq):
+            if self.hardcoded_u_seq:
                 # use a hardcoded command rather than running the neural networks
+                if self.hardcoded_cur_step >= len(self.hardcoded_u_seq):
+                    self.hardcoded_cur_step = len(self.hardcoded_u_seq) - 1
 
                 hardcoded_command = self.hardcoded_u_seq[self.hardcoded_cur_step]
 
+                if isinstance(hardcoded_command, int):
+                    hardcoded_command = [hardcoded_command] * self.num_aircraft_acasxu
+
                 for a in range(self.num_aircraft_acasxu):
-                    self.commands[a] = hardcoded_command
+                    self.commands[a] = hardcoded_command[a]
 
                 self.hardcoded_cur_step += 1
             else:
@@ -190,6 +199,10 @@ class AcasXuAutopilot(Autopilot):
                         print(f"closest intruder index: {closest_intruder_index}")
                         print(f"command issued: {self.labels[self.commands[a]]} ({self.commands[a]})")
 
+                    if a == 0:
+                        self.command_history.append([None] * self.num_aircraft_acasxu)
+
+                    self.command_history[-1][a] = self.commands[a]
                     self.history.append((self.commands[a], ownship_state))
                     self.closest_intruder_indices[a] = closest_intruder_index
 
@@ -264,6 +277,7 @@ class AcasXuAutopilot(Autopilot):
             self.all_acasxu_commands[ownship_index][intruder_index] = 0
         else:
             last_command = self.all_acasxu_commands[ownship_index][intruder_index]
+            # note using last_command=0 seems to work better for aircraft >= 3
 
             net = self.nets[last_command]
 
@@ -291,6 +305,8 @@ class AcasXuAutopilot(Autopilot):
                 rv += self.get_u_ref_ownship(state, a)
             else:
                 rv += self.get_u_ref_intruder(state, a)
+
+        #print(f".debug {t}, u_ref = {rv}")
 
         return rv
 
@@ -379,8 +395,11 @@ class AcasXuAutopilot(Autopilot):
     def get_u_ref_ownship(self, x_f16, index):
         '''get the reference input for ownship'''
 
+        command = self.commands[index]
+        assert 0 <= command <= 4, f"invalid command in get u_ref ownship: {command}"
+
         roll_rate_cmd_list = [0, -1.5, 1.5, -3.0, 3.0] # deg / sec
-        roll_rate_cmd_deg = roll_rate_cmd_list[self.commands[index]]
+        roll_rate_cmd_deg = roll_rate_cmd_list[command]
 
         # these bank angle cmds were empirically found to achieve the desired turn rate
         if roll_rate_cmd_deg == 0:
@@ -521,7 +540,7 @@ def cart2sph(pt3d):
 
     return az, elev, r
 
-def make_intruder_waypoints(init, num_vars, hypot=1e6):
+def make_intruder_waypoints(init, num_vars, hypot=1e5):
     '''make the intruder waypoints (list of 3-tuples)
 
     assumes intruder just flies straight
@@ -597,9 +616,6 @@ def load_networks():
         dir_name = get_script_path(__file__)
         filename = os.path.join(dir_name, "nn", f"ACASXU_run2a_{net}_1_batch_2000.onnx")
 
-        #model = onnx.load(filename)
-        #onnx.checker.check_model(model)
-        #sess = ort.InferenceSession(model.SerializeToString())
         sess = ort.InferenceSession(filename)
 
         nets.append(sess)
@@ -607,4 +623,4 @@ def load_networks():
     return nets
 
 if __name__ == '__main__':
-    print("Autopulot script not meant to be run directly.")
+    print("Autopilot script not meant to be run directly.")
