@@ -26,6 +26,12 @@ The following Python libraries are required (can be installed using `sudo pip in
 
 `control` - for control design (not needed for simulation)
 
+### Animation isuses
+Use matplotlib version 3.1.1 if you get errors like: 
+"art3d.py", line 175, in set_3d_properties
+    zs = np.broadcast_to(zs, xs.shape)
+AttributeError: 'list' object has no attribute 'shape'
+
 ### Release Documentation
 Distribution A: Approved for Public Release (88ABW-2020-2188) (changes in this version)
     
